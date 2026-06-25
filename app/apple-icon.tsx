@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { EveImageMark } from "./_components/eve-image-mark";
+import { HarpyImageMark } from "./_components/harpy-image-mark";
 
 export const size = {
   width: 180,
@@ -21,7 +21,7 @@ export default function AppleIcon() {
           width: "100%",
         }}
       >
-        <EveImageMark size={122} />
+        <HarpyImageMark size={122} />
       </div>
     ),
     size,

@@ -8,6 +8,7 @@ import {
   type AgentChatControllerStatus,
 } from "@/app/_components/agent-chat";
 import { useChatShell } from "@/app/_components/chat-shell-context";
+import { HarpyWordmark } from "@/app/_components/harpy-wordmark";
 import { ChatComposer } from "@/components/chat/composer";
 import { TemplateFooterLinks } from "@/components/chat/template-footer-links";
 import { getChatMessageLengthError } from "@/lib/chat/limits";
@@ -150,12 +151,7 @@ export function HomeChatPage() {
         <div className="flex min-h-0 flex-1 items-center justify-center pb-20 sm:pb-[12vh]">
           <div className="w-full max-w-2xl space-y-5 sm:space-y-7 md:space-y-8">
             <h1 className="flex justify-center">
-              <img
-                alt="eve"
-                className="size-16 select-none invert sm:size-20 md:size-24 dark:invert-0"
-                draggable={false}
-                src="/eve.svg"
-              />
+              <HarpyWordmark className="text-5xl sm:text-6xl md:text-7xl" />
             </h1>
             <ChatComposer
               autoFocus
