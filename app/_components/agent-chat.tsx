@@ -1955,6 +1955,9 @@ const CONNECTION_LABELS = {
   linear: "Linear",
   notion: "Notion",
   sentry: "Sentry",
+  x: "X",
+  linkedin: "LinkedIn",
+  threads: "Threads",
 } satisfies Record<keyof EnabledConnections, string>;
 
 function createConnectionClientContext(enabledConnections: EnabledConnections) {

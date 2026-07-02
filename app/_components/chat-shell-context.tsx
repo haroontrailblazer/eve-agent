@@ -7,6 +7,9 @@ export type EnabledConnections = {
   readonly linear: boolean;
   readonly notion: boolean;
   readonly sentry: boolean;
+  readonly x: boolean;
+  readonly linkedin: boolean;
+  readonly threads: boolean;
 };
 
 type ChatShellContextValue = {
