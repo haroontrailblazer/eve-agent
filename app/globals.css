@@ -159,17 +159,17 @@ html[data-eve-chat-sidebar="closed"] [data-desktop-sidebar] {
 }
 
 .harpy-logo__part--left {
-  transform-origin: 48px 50px;
+  transform-origin: 38px 48px;
   animation-delay: 0s;
 }
 
 .harpy-logo__part--center {
-  transform-origin: 50px 50px;
+  transform-origin: 50px 38px;
   animation-delay: 0.15s;
 }
 
 .harpy-logo__part--right {
-  transform-origin: 52px 50px;
+  transform-origin: 62px 48px;
   animation-delay: 0.3s;
 }
 

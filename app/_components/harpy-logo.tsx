@@ -1,14 +1,14 @@
 import { HARPY_LOGO_PATH, HARPY_LOGO_VIEWBOX } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
-// The harpy feather, split into three vertical bands — left vane, shaft, right
-// vane — each rendering the FULL mark clipped to its band, so at rest they tile
-// back into the exact feather and each vane can flutter (pop) on its own from
-// the shaft. See the harpy-logo styles in globals.css.
+// The winged orb, split into three bands — left wing, orb + tail, right wing —
+// each rendering the FULL mark clipped to its band, so at rest they tile back
+// into the exact mark and the two wings can flap (pop) around the orb. See the
+// harpy-logo styles in globals.css.
 const VANES = [
-  { key: "left", points: "0,0 48,0 48,100 0,100" },
-  { key: "center", points: "48,0 52,0 52,100 48,100" },
-  { key: "right", points: "52,0 100,0 100,100 52,100" },
+  { key: "left", points: "0,0 38,0 38,100 0,100" },
+  { key: "center", points: "38,0 62,0 62,100 38,100" },
+  { key: "right", points: "62,0 100,0 100,100 62,100" },
 ] as const;
 
 export function HarpyLogo({ className }: { readonly className?: string }) {
