@@ -1,7 +1,7 @@
 "use client";
 
 import { SignInButton } from "@/components/auth/sign-in-button";
-import { VercelIcon } from "@/components/icons";
+import { RhpLogoIcon } from "@/components/icons";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +28,7 @@ export function SignInModal({
       <DialogContent className="sm:max-w-sm">
         <DialogHeader className="items-center text-center">
           <div className="mb-2 flex size-10 items-center justify-center rounded-full border border-border bg-muted">
-            <VercelIcon className="size-4 text-foreground" />
+            <RhpLogoIcon className="size-5 text-foreground" />
           </div>
           <DialogTitle>Sign up or in to get started</DialogTitle>
           <DialogDescription>

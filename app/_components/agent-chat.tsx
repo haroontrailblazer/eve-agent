@@ -44,6 +44,7 @@ import { IntegrationsMenu } from "@/components/chat/integrations-menu";
 import { AgentMessage } from "@/components/chat/message";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { HarpyLogo } from "./harpy-logo";
 import { HarpyWordmark } from "./harpy-wordmark";
 import { isChatTurnSettledEvent } from "@/lib/chat/events";
 import { getChatMessageLengthError } from "@/lib/chat/limits";
@@ -2045,8 +2046,9 @@ export function EmptyChatBody({ composer }: { readonly composer?: ReactNode }) {
     <div className="flex min-h-0 flex-1 flex-col pt-14 md:pt-8">
       <div className="flex min-h-0 flex-1 items-center justify-center">
         <div className="w-full max-w-2xl space-y-8 sm:space-y-10 md:space-y-12">
-          <h1 className="flex justify-center">
-            <HarpyWordmark className="text-5xl sm:text-6xl md:text-7xl" />
+          <h1 className="flex items-center justify-center gap-3 sm:gap-4">
+            <HarpyLogo className="size-12 sm:size-14 md:size-16" />
+            <HarpyWordmark className="text-4xl sm:text-5xl md:text-6xl" />
           </h1>
           {composer}
         </div>

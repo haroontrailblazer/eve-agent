@@ -8,6 +8,7 @@ import {
   type AgentChatControllerStatus,
 } from "@/app/_components/agent-chat";
 import { useChatShell } from "@/app/_components/chat-shell-context";
+import { HarpyLogo } from "@/app/_components/harpy-logo";
 import { HarpyWordmark } from "@/app/_components/harpy-wordmark";
 import { ChatComposer } from "@/components/chat/composer";
 import { TemplateFooterLinks } from "@/components/chat/template-footer-links";
@@ -150,8 +151,9 @@ export function HomeChatPage() {
       <div className="flex min-h-0 flex-1 flex-col justify-between px-4 pt-8 pb-4 sm:px-6 sm:pb-6">
         <div className="flex min-h-0 flex-1 items-center justify-center pb-20 sm:pb-[12vh]">
           <div className="w-full max-w-2xl space-y-5 sm:space-y-7 md:space-y-8">
-            <h1 className="flex justify-center">
-              <HarpyWordmark className="text-5xl sm:text-6xl md:text-7xl" />
+            <h1 className="flex items-center justify-center gap-3 sm:gap-4">
+              <HarpyLogo className="size-12 sm:size-14 md:size-16" />
+              <HarpyWordmark className="text-4xl sm:text-5xl md:text-6xl" />
             </h1>
             <ChatComposer
               autoFocus
