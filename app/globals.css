@@ -195,47 +195,62 @@ html[data-eve-chat-sidebar="closed"] [data-desktop-sidebar] {
   }
 }
 
-/* Livelier variant (used in the "Thinking…" indicator): the whole mark dips,
-   leaps up while spinning a full turn, lands, then pauses — on a relaxed loop.
-   The faces stay assembled so it reads as one object jumping and spinning. */
-.harpy-logo--lively .harpy-logo__part {
-  animation: none;
-  transform: none;
+/* Livelier variant (used in the "Thinking…" indicator): the wings beat around
+   the orb while the orb gently bobs — the winged orb flapping in place. Each
+   wing rotates about its hinge next to the body. */
+.harpy-logo--lively .harpy-logo__part--left {
+  transform-origin: 38px 48px;
+  animation: harpy-flap-left 0.62s ease-in-out infinite;
 }
 
-.harpy-logo--lively {
-  transform-origin: center;
-  animation: harpy-jump-spin 2.4s ease-in-out infinite;
-  will-change: transform;
+.harpy-logo--lively .harpy-logo__part--center {
+  transform-origin: 50px 40px;
+  animation: harpy-body-bob 0.62s ease-in-out infinite;
 }
 
-@keyframes harpy-jump-spin {
+.harpy-logo--lively .harpy-logo__part--right {
+  transform-origin: 62px 48px;
+  animation: harpy-flap-right 0.62s ease-in-out infinite;
+}
+
+@keyframes harpy-flap-left {
   0%,
-  32% {
-    transform: translateY(0) rotate(0deg) scale(1);
-  }
-
-  40% {
-    transform: translateY(6%) rotate(0deg) scale(0.9);
-  }
-
-  62% {
-    transform: translateY(-28%) rotate(190deg) scale(1.06);
-  }
-
-  80% {
-    transform: translateY(0) rotate(360deg) scale(0.95);
-  }
-
-  88%,
   100% {
-    transform: translateY(0) rotate(360deg) scale(1);
+    transform: rotate(-11deg);
+  }
+
+  50% {
+    transform: rotate(25deg);
+  }
+}
+
+@keyframes harpy-flap-right {
+  0%,
+  100% {
+    transform: rotate(11deg);
+  }
+
+  50% {
+    transform: rotate(-25deg);
+  }
+}
+
+@keyframes harpy-body-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-1.5px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .harpy-logo__part,
-  .harpy-logo--lively {
+  .harpy-logo--lively .harpy-logo__part--left,
+  .harpy-logo--lively .harpy-logo__part--center,
+  .harpy-logo--lively .harpy-logo__part--right {
     animation: none;
     transform: none;
   }
