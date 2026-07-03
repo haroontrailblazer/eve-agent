@@ -195,50 +195,47 @@ html[data-eve-chat-sidebar="closed"] [data-desktop-sidebar] {
   }
 }
 
-/* Livelier variant (used in the "Thinking…" indicator): bigger, faster, a
-   near-constant ripple of pops so the motion clearly reads at small sizes. */
+/* Livelier variant (used in the "Thinking…" indicator): the whole mark dips,
+   leaps up while spinning a full turn, lands, then pauses — on a relaxed loop.
+   The faces stay assembled so it reads as one object jumping and spinning. */
 .harpy-logo--lively .harpy-logo__part {
-  animation-name: harpy-part-pop-lively;
-  animation-duration: 1.5s;
+  animation: none;
+  transform: none;
 }
 
-.harpy-logo--lively .harpy-logo__part--top {
-  animation-delay: 0s;
+.harpy-logo--lively {
+  transform-origin: center;
+  animation: harpy-jump-spin 2.4s ease-in-out infinite;
+  will-change: transform;
 }
 
-.harpy-logo--lively .harpy-logo__part--right {
-  animation-delay: 0.16s;
-}
-
-.harpy-logo--lively .harpy-logo__part--left {
-  animation-delay: 0.32s;
-}
-
-@keyframes harpy-part-pop-lively {
+@keyframes harpy-jump-spin {
   0%,
-  100% {
-    transform: scale(1);
+  32% {
+    transform: translateY(0) rotate(0deg) scale(1);
   }
 
-  20% {
-    transform: scale(1.3);
-  }
-
-  42% {
-    transform: scale(0.88);
+  40% {
+    transform: translateY(6%) rotate(0deg) scale(0.9);
   }
 
   62% {
-    transform: scale(1.08);
+    transform: translateY(-28%) rotate(190deg) scale(1.06);
   }
 
   80% {
-    transform: scale(0.97);
+    transform: translateY(0) rotate(360deg) scale(0.95);
+  }
+
+  88%,
+  100% {
+    transform: translateY(0) rotate(360deg) scale(1);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .harpy-logo__part {
+  .harpy-logo__part,
+  .harpy-logo--lively {
     animation: none;
     transform: none;
   }
