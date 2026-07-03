@@ -195,6 +195,48 @@ html[data-eve-chat-sidebar="closed"] [data-desktop-sidebar] {
   }
 }
 
+/* Livelier variant (used in the "Thinking…" indicator): bigger, faster, a
+   near-constant ripple of pops so the motion clearly reads at small sizes. */
+.harpy-logo--lively .harpy-logo__part {
+  animation-name: harpy-part-pop-lively;
+  animation-duration: 1.5s;
+}
+
+.harpy-logo--lively .harpy-logo__part--top {
+  animation-delay: 0s;
+}
+
+.harpy-logo--lively .harpy-logo__part--right {
+  animation-delay: 0.16s;
+}
+
+.harpy-logo--lively .harpy-logo__part--left {
+  animation-delay: 0.32s;
+}
+
+@keyframes harpy-part-pop-lively {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  20% {
+    transform: scale(1.3);
+  }
+
+  42% {
+    transform: scale(0.88);
+  }
+
+  62% {
+    transform: scale(1.08);
+  }
+
+  80% {
+    transform: scale(0.97);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .harpy-logo__part {
     animation: none;

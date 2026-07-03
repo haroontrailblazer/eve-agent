@@ -2022,12 +2022,12 @@ function ThinkingMessage({ isVisible }: { readonly isVisible: boolean }) {
       aria-live={isVisible ? "polite" : "off"}
       className={[
         "flex w-full justify-start overflow-hidden transition-[opacity,transform,max-height] duration-200 ease-out",
-        isVisible ? "max-h-8 translate-y-0 opacity-100" : "max-h-0 -translate-y-1 opacity-0",
+        isVisible ? "max-h-14 translate-y-0 opacity-100" : "max-h-0 -translate-y-1 opacity-0",
       ].join(" ")}
       role="status"
     >
-      <div className="flex items-center gap-2 px-3 text-[15px] font-medium leading-6 text-muted-foreground">
-        <HarpyLogo className="size-5 shrink-0" />
+      <div className="flex items-center gap-2.5 px-3 py-1.5 text-[15px] font-medium leading-6 text-muted-foreground">
+        <HarpyLogo className="harpy-logo--lively size-7 shrink-0" />
         <span className="shimmer-text">Thinking...</span>
       </div>
     </article>
