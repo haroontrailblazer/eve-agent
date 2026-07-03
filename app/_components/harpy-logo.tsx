@@ -1,55 +1,52 @@
 import { RHP_LOGO_PATH, RHP_LOGO_VIEWBOX } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
-// The animated 3D brand mark shown in the hero lockup. The 3D read comes from a
-// metallic gradient front face, two darker offset copies behind it (a faux
-// extrusion), a grounding drop-shadow, and a gentle perspective rotation. All
-// animation is CSS (see globals.css) and is disabled under prefers-reduced-motion.
+// The brand mark, split into four wedges (top / right / bottom / left) that meet
+// at the center. Each wedge renders the FULL path clipped to its wedge, so at
+// rest the four tile back into the exact crisp logo (interlock weave intact),
+// but each wedge can pop in on its own — see the harpy-logo styles in globals.css.
+// Kept as clean single-color line art (currentColor) so it stays sharp, never blurred.
+const WEDGES = [
+  { key: "top", points: "36,40.165 0,0 71.988,0" },
+  { key: "right", points: "34.5,38.665 71.988,0 71.988,77.33" },
+  { key: "bottom", points: "36,37.165 71.988,77.33 0,77.33" },
+  { key: "left", points: "37.5,38.665 0,77.33 0,0" },
+] as const;
+
 export function HarpyLogo({ className }: { readonly className?: string }) {
   return (
-    <span aria-hidden className={cn("harpy-logo inline-block", className)}>
-      <span className="harpy-logo__persp block h-full w-full">
-        <span className="harpy-logo__inner block h-full w-full">
-          <svg
-            className="harpy-logo__svg h-full w-full"
-            viewBox={RHP_LOGO_VIEWBOX}
-            xmlns="http://www.w3.org/2000/svg"
+    <span aria-hidden className={cn("harpy-logo inline-block text-foreground", className)}>
+      <svg
+        className="harpy-logo__svg block h-full w-full"
+        viewBox={RHP_LOGO_VIEWBOX}
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <defs>
+          {WEDGES.map((wedge) => (
+            <clipPath
+              clipPathUnits="userSpaceOnUse"
+              id={`harpy-wedge-${wedge.key}`}
+              key={wedge.key}
+            >
+              <polygon points={wedge.points} />
+            </clipPath>
+          ))}
+        </defs>
+        {WEDGES.map((wedge) => (
+          <g
+            className={`harpy-logo__part harpy-logo__part--${wedge.key}`}
+            clipPath={`url(#harpy-wedge-${wedge.key})`}
+            key={wedge.key}
           >
-            <defs>
-              <linearGradient id="harpyLogoMetal" x1="0" x2="0.35" y1="0" y2="1">
-                <stop offset="0%" stopColor="#ffffff" />
-                <stop offset="16%" stopColor="#e6e6e6" />
-                <stop offset="44%" stopColor="#b4b4b4" />
-                <stop offset="52%" stopColor="#6f6f6f" />
-                <stop offset="64%" stopColor="#c9c9c9" />
-                <stop offset="100%" stopColor="#f4f4f4" />
-              </linearGradient>
-            </defs>
-            {/* extrusion depth */}
             <path
               clipRule="evenodd"
               d={RHP_LOGO_PATH}
-              fill="#242424"
-              fillRule="evenodd"
-              transform="translate(2.4 2.9)"
-            />
-            <path
-              clipRule="evenodd"
-              d={RHP_LOGO_PATH}
-              fill="#4a4a4a"
-              fillRule="evenodd"
-              transform="translate(1.2 1.4)"
-            />
-            {/* front face */}
-            <path
-              clipRule="evenodd"
-              d={RHP_LOGO_PATH}
-              fill="url(#harpyLogoMetal)"
+              fill="currentColor"
               fillRule="evenodd"
             />
-          </svg>
-        </span>
-      </span>
+          </g>
+        ))}
+      </svg>
     </span>
   );
 }
