@@ -91,7 +91,7 @@ export function ChatSidebar({
         className,
       )}
     >
-      <div className="flex flex-col gap-1 px-2 pt-6 pb-2">
+      <div className="flex flex-col gap-1 px-2 pt-2 pb-2">
         <div className="flex items-center justify-between">
           <button
             aria-label="New session"
@@ -119,7 +119,7 @@ export function ChatSidebar({
         </div>
         <button
           className={cn(
-            "flex h-8 items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
+            "mt-4 flex h-8 items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
             newSessionActive ? activeRowClass : inactiveRowClass,
           )}
           onClick={() => {
