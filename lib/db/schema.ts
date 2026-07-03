@@ -98,6 +98,25 @@ export const chatEvent = pgTable(
   ],
 );
 
+export const mcpConnection = pgTable(
+  "mcp_connection",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    url: text("url"),
+    token: text("token"),
+    account: text("account"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_mcp_user_platform").on(table.userId, table.platform)],
+);
+
 export type Chat = typeof chat.$inferSelect;
 export type ChatEvent = typeof chatEvent.$inferSelect;
 export type User = typeof user.$inferSelect;
+export type McpConnection = typeof mcpConnection.$inferSelect;
