@@ -64,9 +64,6 @@ export function AgentChatShell({
     linear: true,
     notion: true,
     sentry: true,
-    x: false,
-    linkedin: false,
-    threads: false,
   });
   const cursorRef = useRef(initialNextCursor);
   const activeChatIdRef = useRef(activeChatId);

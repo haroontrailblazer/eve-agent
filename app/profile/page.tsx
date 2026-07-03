@@ -100,8 +100,9 @@ async function ProfileContent() {
         {connections.length === 0 ? (
           <Empty>
             No MCP connections yet. In chat, try{" "}
-            <span className="text-foreground">“connect LinkedIn to @myhandle”</span> — harpy saves
-            it here and tells you the account.
+            <span className="text-foreground">“connect the DeepWiki MCP”</span> — it’s a public
+            server (<code className="font-mono text-xs">mcp.deepwiki.com/mcp</code>), so no API key
+            or token is needed. harpy saves it here.
           </Empty>
         ) : (
           <ul className="flex flex-col gap-2">
