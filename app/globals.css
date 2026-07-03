@@ -150,68 +150,54 @@ html[data-eve-chat-sidebar="closed"] [data-desktop-sidebar] {
   }
 }
 
-/* Brand mark (HarpyLogo): each wedge pops up in sequence, then settles/fades. */
+/* Brand mark (HarpyLogo): the logo stays fully visible; each cube face pops
+   (a quick bounce) in sequence — top, then right, then left — and repeats. */
 .harpy-logo__part {
   transform-box: view-box;
-  will-change: transform, opacity;
-  animation: harpy-part-pop 4.2s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+  will-change: transform;
+  animation: harpy-part-pop 3s ease-out infinite;
 }
 
 .harpy-logo__part--top {
-  transform-origin: 36px 20px;
+  transform-origin: 36px 15px;
   animation-delay: 0s;
 }
 
 .harpy-logo__part--right {
-  transform-origin: 54px 38.7px;
-  animation-delay: 0.16s;
-}
-
-.harpy-logo__part--bottom {
-  transform-origin: 36px 57px;
-  animation-delay: 0.32s;
+  transform-origin: 57px 52px;
+  animation-delay: 0.22s;
 }
 
 .harpy-logo__part--left {
-  transform-origin: 18px 38.7px;
-  animation-delay: 0.48s;
+  transform-origin: 15px 52px;
+  animation-delay: 0.44s;
 }
 
 @keyframes harpy-part-pop {
   0% {
-    opacity: 0;
-    transform: translateY(8px) scale(0.72);
+    transform: scale(1);
   }
 
-  10% {
-    opacity: 1;
-    transform: translateY(-3px) scale(1.05);
+  6% {
+    transform: scale(1.14);
   }
 
-  18% {
-    transform: translateY(0) scale(1);
+  13% {
+    transform: scale(0.98);
   }
 
-  72% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-
-  86% {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.9);
+  20% {
+    transform: scale(1);
   }
 
   100% {
-    opacity: 0;
-    transform: translateY(8px) scale(0.72);
+    transform: scale(1);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .harpy-logo__part {
     animation: none;
-    opacity: 1;
     transform: none;
   }
 }

@@ -1,16 +1,16 @@
 import { RHP_LOGO_PATH, RHP_LOGO_VIEWBOX } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
-// The brand mark, split into four wedges (top / right / bottom / left) that meet
-// at the center. Each wedge renders the FULL path clipped to its wedge, so at
-// rest the four tile back into the exact crisp logo (interlock weave intact),
-// but each wedge can pop in on its own — see the harpy-logo styles in globals.css.
-// Kept as clean single-color line art (currentColor) so it stays sharp, never blurred.
+// The brand mark, split into the three isometric cube faces (top / right / left)
+// that meet at the center. Each face renders the FULL path clipped to its face,
+// so at rest the three tile back into the exact crisp logo (interlock weave
+// intact) and the logo never disappears; each face just pops (bounces) in turn —
+// see the harpy-logo styles in globals.css. Clean single-color line art
+// (currentColor) so it stays sharp, never blurred.
 const WEDGES = [
-  { key: "top", points: "36,40.165 0,0 71.988,0" },
-  { key: "right", points: "34.5,38.665 71.988,0 71.988,77.33" },
-  { key: "bottom", points: "36,37.165 71.988,77.33 0,77.33" },
-  { key: "left", points: "37.5,38.665 0,77.33 0,0" },
+  { key: "top", points: "36,38.665 0,19.33 0,0 71.988,0 71.988,19.33" },
+  { key: "right", points: "36,38.665 71.988,19.33 71.988,77.33 36,77.33" },
+  { key: "left", points: "36,38.665 0,19.33 0,77.33 36,77.33" },
 ] as const;
 
 export function HarpyLogo({ className }: { readonly className?: string }) {
