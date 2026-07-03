@@ -1,7 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { listMcpConnections } from "@/lib/db/mcp";
-import { resolveUserId } from "@/lib/mcp-context";
+import { resolveDbUserId } from "@/lib/mcp-context";
 
 export default defineTool({
   description:
@@ -13,25 +13,35 @@ export default defineTool({
       .describe("Optionally filter to one platform, e.g. 'linkedin'."),
   }),
   async execute(input, ctx) {
-    const userId = resolveUserId(ctx);
+    const userId = await resolveDbUserId(ctx);
 
     if (!userId) {
       return { connections: [], message: "Sign in to view MCP connections.", ok: false };
     }
 
-    const all = await listMcpConnections(userId);
-    const platform = input.platform?.toLowerCase();
-    const filtered = platform ? all.filter((c) => c.platform === platform) : all;
+    try {
+      const all = await listMcpConnections(userId);
+      const platform = input.platform?.toLowerCase();
+      const filtered = platform ? all.filter((c) => c.platform === platform) : all;
 
-    return {
-      connections: filtered.map((c) => ({
-        account: c.account,
-        enabled: c.enabled,
-        hasToken: Boolean(c.token),
-        platform: c.platform,
-        url: c.url,
-      })),
-      ok: true,
-    };
+      return {
+        connections: filtered.map((c) => ({
+          account: c.account,
+          enabled: c.enabled,
+          hasToken: Boolean(c.token),
+          platform: c.platform,
+          url: c.url,
+        })),
+        ok: true,
+      };
+    } catch (error) {
+      return {
+        connections: [],
+        message: `Couldn't read MCP connections: ${
+          error instanceof Error ? error.message : "database error"
+        }`,
+        ok: false,
+      };
+    }
   },
 });

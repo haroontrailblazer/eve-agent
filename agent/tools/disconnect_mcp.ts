@@ -1,7 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { deleteMcpConnection } from "@/lib/db/mcp";
-import { resolveUserId } from "@/lib/mcp-context";
+import { resolveDbUserId } from "@/lib/mcp-context";
 
 export default defineTool({
   description:
@@ -13,20 +13,30 @@ export default defineTool({
       .describe("The MCP platform to disconnect, e.g. 'linkedin'."),
   }),
   async execute(input, ctx) {
-    const userId = resolveUserId(ctx);
+    const userId = await resolveDbUserId(ctx);
 
     if (!userId) {
       return { ok: false, message: "You need to be signed in to manage MCP connections." };
     }
 
-    const removed = await deleteMcpConnection(userId, input.platform);
     const platform = input.platform.toLowerCase();
 
-    return {
-      message: removed
-        ? `Disconnected ${platform} and removed it from the database.`
-        : `There was no ${platform} connection to disconnect.`,
-      ok: removed,
-    };
+    try {
+      const removed = await deleteMcpConnection(userId, platform);
+
+      return {
+        message: removed
+          ? `Disconnected ${platform} and removed it from the database.`
+          : `There was no ${platform} connection to disconnect.`,
+        ok: removed,
+      };
+    } catch (error) {
+      return {
+        message: `Couldn't disconnect ${platform}: ${
+          error instanceof Error ? error.message : "database error"
+        }`,
+        ok: false,
+      };
+    }
   },
 });
