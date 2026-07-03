@@ -102,7 +102,7 @@ export function ChatSidebar({
             }}
             type="button"
           >
-            <RhpLogoIcon className="size-4 text-foreground" />
+            <RhpLogoIcon className="size-6 text-foreground" />
           </button>
           {onToggleSidebar ? (
             <Button

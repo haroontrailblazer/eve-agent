@@ -2026,7 +2026,8 @@ function ThinkingMessage({ isVisible }: { readonly isVisible: boolean }) {
       ].join(" ")}
       role="status"
     >
-      <div className="px-3 text-[15px] font-medium leading-6 text-muted-foreground">
+      <div className="flex items-center gap-2 px-3 text-[15px] font-medium leading-6 text-muted-foreground">
+        <HarpyLogo className="size-5 shrink-0" />
         <span className="shimmer-text">Thinking...</span>
       </div>
     </article>
