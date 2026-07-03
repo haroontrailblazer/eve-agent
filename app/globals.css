@@ -158,19 +158,19 @@ html[data-eve-chat-sidebar="closed"] [data-desktop-sidebar] {
   animation: harpy-part-pop 3s ease-out infinite;
 }
 
-.harpy-logo__part--top {
-  transform-origin: 36px 15px;
+.harpy-logo__part--left {
+  transform-origin: 48px 50px;
   animation-delay: 0s;
 }
 
-.harpy-logo__part--right {
-  transform-origin: 57px 52px;
-  animation-delay: 0.22s;
+.harpy-logo__part--center {
+  transform-origin: 50px 50px;
+  animation-delay: 0.15s;
 }
 
-.harpy-logo__part--left {
-  transform-origin: 15px 52px;
-  animation-delay: 0.44s;
+.harpy-logo__part--right {
+  transform-origin: 52px 50px;
+  animation-delay: 0.3s;
 }
 
 @keyframes harpy-part-pop {

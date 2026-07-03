@@ -14,7 +14,7 @@ import {
   AuthDisplayLoggedOut,
 } from "@/components/auth/auth-display";
 import { UserMenu } from "@/components/auth/user-menu";
-import { RhpLogoIcon } from "@/components/icons";
+import { HarpyMarkIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -102,7 +102,7 @@ export function ChatSidebar({
             }}
             type="button"
           >
-            <RhpLogoIcon className="size-6 text-foreground" />
+            <HarpyMarkIcon className="size-6 text-foreground" />
           </button>
           {onToggleSidebar ? (
             <Button

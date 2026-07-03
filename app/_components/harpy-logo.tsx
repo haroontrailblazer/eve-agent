@@ -1,16 +1,14 @@
-import { RHP_LOGO_PATH, RHP_LOGO_VIEWBOX } from "@/lib/brand";
+import { HARPY_LOGO_PATH, HARPY_LOGO_VIEWBOX } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
-// The brand mark, split into the three isometric cube faces (top / right / left)
-// that meet at the center. Each face renders the FULL path clipped to its face,
-// so at rest the three tile back into the exact crisp logo (interlock weave
-// intact) and the logo never disappears; each face just pops (bounces) in turn —
-// see the harpy-logo styles in globals.css. Clean single-color line art
-// (currentColor) so it stays sharp, never blurred.
-const WEDGES = [
-  { key: "top", points: "36,38.665 0,19.33 0,0 71.988,0 71.988,19.33" },
-  { key: "right", points: "36,38.665 71.988,19.33 71.988,77.33 36,77.33" },
-  { key: "left", points: "36,38.665 0,19.33 0,77.33 36,77.33" },
+// The harpy feather, split into three vertical bands — left vane, shaft, right
+// vane — each rendering the FULL mark clipped to its band, so at rest they tile
+// back into the exact feather and each vane can flutter (pop) on its own from
+// the shaft. See the harpy-logo styles in globals.css.
+const VANES = [
+  { key: "left", points: "0,0 48,0 48,100 0,100" },
+  { key: "center", points: "48,0 52,0 52,100 48,100" },
+  { key: "right", points: "52,0 100,0 100,100 52,100" },
 ] as const;
 
 export function HarpyLogo({ className }: { readonly className?: string }) {
@@ -18,34 +16,32 @@ export function HarpyLogo({ className }: { readonly className?: string }) {
     <span aria-hidden className={cn("harpy-logo inline-block text-foreground", className)}>
       <svg
         className="harpy-logo__svg block h-full w-full"
-        viewBox={RHP_LOGO_VIEWBOX}
+        viewBox={HARPY_LOGO_VIEWBOX}
         xmlns="http://www.w3.org/2000/svg"
       >
         <defs>
-          {WEDGES.map((wedge) => (
+          {VANES.map((vane) => (
             <clipPath
               clipPathUnits="userSpaceOnUse"
-              id={`harpy-wedge-${wedge.key}`}
-              key={wedge.key}
+              id={`harpy-vane-${vane.key}`}
+              key={vane.key}
             >
-              <polygon points={wedge.points} />
+              <polygon points={vane.points} />
             </clipPath>
           ))}
         </defs>
-        {WEDGES.map((wedge) => (
+        {VANES.map((vane) => (
           <g
-            className={`harpy-logo__part harpy-logo__part--${wedge.key}`}
-            clipPath={`url(#harpy-wedge-${wedge.key})`}
-            key={wedge.key}
+            className={`harpy-logo__part harpy-logo__part--${vane.key}`}
+            clipPath={`url(#harpy-vane-${vane.key})`}
+            key={vane.key}
           >
             <path
-              clipRule="evenodd"
-              d={RHP_LOGO_PATH}
+              d={HARPY_LOGO_PATH}
               fill="currentColor"
-              fillRule="evenodd"
               stroke="currentColor"
               strokeLinejoin="round"
-              strokeWidth={1.3}
+              strokeWidth={2}
             />
           </g>
         ))}

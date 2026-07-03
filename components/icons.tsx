@@ -1,21 +1,19 @@
-import { RHP_LOGO_PATH, RHP_LOGO_VIEWBOX } from "@/lib/brand";
+import { HARPY_LOGO_PATH, HARPY_LOGO_VIEWBOX } from "@/lib/brand";
 
-export function RhpLogoIcon({ className }: { readonly className?: string }) {
+export function HarpyMarkIcon({ className }: { readonly className?: string }) {
   return (
     <svg
       aria-hidden="true"
       className={className}
       fill="currentColor"
-      viewBox={RHP_LOGO_VIEWBOX}
+      viewBox={HARPY_LOGO_VIEWBOX}
       xmlns="http://www.w3.org/2000/svg"
     >
       <path
-        clipRule="evenodd"
-        d={RHP_LOGO_PATH}
-        fillRule="evenodd"
+        d={HARPY_LOGO_PATH}
         stroke="currentColor"
         strokeLinejoin="round"
-        strokeWidth={1.3}
+        strokeWidth={2}
       />
     </svg>
   );
