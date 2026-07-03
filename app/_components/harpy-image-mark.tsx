@@ -14,7 +14,15 @@ export function HarpyImageMark({ size }: { readonly size: number }) {
       width={size}
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path clipRule="evenodd" d={RHP_LOGO_PATH} fill="white" fillRule="evenodd" />
+      <path
+        clipRule="evenodd"
+        d={RHP_LOGO_PATH}
+        fill="white"
+        fillRule="evenodd"
+        stroke="white"
+        strokeLinejoin="round"
+        strokeWidth={1.3}
+      />
     </svg>
   );
 }

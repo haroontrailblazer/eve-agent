@@ -9,7 +9,14 @@ export function RhpLogoIcon({ className }: { readonly className?: string }) {
       viewBox={RHP_LOGO_VIEWBOX}
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path clipRule="evenodd" d={RHP_LOGO_PATH} fillRule="evenodd" />
+      <path
+        clipRule="evenodd"
+        d={RHP_LOGO_PATH}
+        fillRule="evenodd"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth={1.3}
+      />
     </svg>
   );
 }

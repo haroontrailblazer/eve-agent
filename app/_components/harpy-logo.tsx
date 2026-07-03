@@ -43,6 +43,9 @@ export function HarpyLogo({ className }: { readonly className?: string }) {
               d={RHP_LOGO_PATH}
               fill="currentColor"
               fillRule="evenodd"
+              stroke="currentColor"
+              strokeLinejoin="round"
+              strokeWidth={1.3}
             />
           </g>
         ))}
