@@ -110,6 +110,11 @@ export const mcpConnection = pgTable(
     token: text("token"),
     account: text("account"),
     enabled: boolean("enabled").notNull().default(true),
+    // OAuth state for MCP servers that sign in via OAuth (dynamic client
+    // registration + PKCE): { client, verifier, tokens }. oauthState holds the
+    // pending flow's `state` so the callback can find this row.
+    oauth: jsonb("oauth").$type<Record<string, unknown> | null>(),
+    oauthState: text("oauth_state"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

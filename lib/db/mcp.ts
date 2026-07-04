@@ -90,3 +90,43 @@ export async function deleteMcpConnection(userId: string, platform: string): Pro
 
   return rows.length > 0;
 }
+
+// --- OAuth state (for MCP servers that sign in via OAuth) -------------------
+
+export async function patchMcpOauth(
+  userId: string,
+  platform: string,
+  partial: Record<string, unknown>,
+): Promise<void> {
+  const p = platform.toLowerCase();
+  const existing = await getMcpConnection(userId, p);
+  const merged = { ...((existing?.oauth as Record<string, unknown> | null) ?? {}), ...partial };
+
+  await db
+    .update(mcpConnection)
+    .set({ oauth: merged, updatedAt: new Date() })
+    .where(and(eq(mcpConnection.userId, userId), eq(mcpConnection.platform, p)));
+}
+
+export async function setMcpOauthState(
+  userId: string,
+  platform: string,
+  state: string | null,
+): Promise<void> {
+  const p = platform.toLowerCase();
+
+  await db
+    .update(mcpConnection)
+    .set({ oauthState: state, updatedAt: new Date() })
+    .where(and(eq(mcpConnection.userId, userId), eq(mcpConnection.platform, p)));
+}
+
+export async function getMcpByOauthState(state: string): Promise<McpConnection | null> {
+  const rows = await db
+    .select()
+    .from(mcpConnection)
+    .where(eq(mcpConnection.oauthState, state))
+    .limit(1);
+
+  return rows[0] ?? null;
+}
