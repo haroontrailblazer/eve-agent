@@ -48,6 +48,7 @@ import { HarpyLogo } from "./harpy-logo";
 import { HarpyWordmark } from "./harpy-wordmark";
 import {
   buildMessageContent,
+  stripInlineAttachments,
   toAttachmentMeta,
   type Attachment,
   type AttachmentMeta,
@@ -2201,5 +2202,10 @@ function getMessageText(message: EveMessageData["messages"][number]) {
     .join("\n")
     .trim();
 
-  return text || null;
+  // Strip the `[file: …]` placeholders eve injects for sent attachments so this
+  // text matches the raw text the user typed — that equality is what clears the
+  // optimistic pending message (otherwise "Thinking…" hangs until a refresh).
+  const cleaned = stripInlineAttachments(text);
+
+  return cleaned || null;
 }

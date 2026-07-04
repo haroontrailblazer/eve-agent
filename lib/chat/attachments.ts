@@ -25,6 +25,42 @@ export function toAttachmentMeta(attachments: readonly Attachment[]): Attachment
   }));
 }
 
+// eve's message reducer renders a sent file part as a text placeholder:
+// `[file: name (mediaType)]` (wire summary) or `[file: name]` / `[file]`
+// (client reducer). We parse these back into chips and strip them from the
+// visible text so the bubble stays clean — and so the sent-vs-displayed text
+// comparison that clears the optimistic "Thinking…" state still matches.
+const INLINE_FILE_RE = /\[file(?::\s*([^\][]*?))?\]/g;
+
+function splitNameAndType(raw: string): AttachmentMeta {
+  const match = raw.match(/^(.*?)\s*\(([^()]+)\)\s*$/);
+
+  if (match) {
+    return { mediaType: match[2].trim(), name: match[1].trim() };
+  }
+
+  return { mediaType: "", name: raw.trim() };
+}
+
+export function parseInlineAttachments(text: string): AttachmentMeta[] {
+  const attachments: AttachmentMeta[] = [];
+
+  for (const match of text.matchAll(INLINE_FILE_RE)) {
+    const raw = (match[1] ?? "").trim();
+    attachments.push(raw ? splitNameAndType(raw) : { mediaType: "", name: "File" });
+  }
+
+  return attachments;
+}
+
+export function stripInlineAttachments(text: string): string {
+  return text
+    .replace(INLINE_FILE_RE, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
 const EXT_MEDIA_TYPES: Record<string, string> = {
   css: "text/css",
   csv: "text/csv",

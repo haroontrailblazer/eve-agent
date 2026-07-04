@@ -121,7 +121,29 @@ export const mcpConnection = pgTable(
   (table) => [uniqueIndex("idx_mcp_user_platform").on(table.userId, table.platform)],
 );
 
+export const skill = pgTable(
+  "skill",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    // URL/command-safe identifier used as the "/slug" in the composer.
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    // The prompt template inserted into the composer (and used to guide the
+    // agent) when the skill is invoked.
+    prompt: text("prompt").notNull().default(""),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_skill_user_slug").on(table.userId, table.slug)],
+);
+
 export type Chat = typeof chat.$inferSelect;
 export type ChatEvent = typeof chatEvent.$inferSelect;
 export type User = typeof user.$inferSelect;
 export type McpConnection = typeof mcpConnection.$inferSelect;
+export type Skill = typeof skill.$inferSelect;

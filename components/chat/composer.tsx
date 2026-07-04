@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowUpIcon, Loader2Icon, PaperclipIcon, SquareIcon, XIcon } from "lucide-react";
+import { ArrowUpIcon, Loader2Icon, PaperclipIcon, SparklesIcon, SquareIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -13,10 +14,17 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { listSkillsAction } from "@/app/actions/skills";
+import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getChatMessageLength, MAX_CHAT_MESSAGE_CHARS } from "@/lib/chat/limits";
+import { filterSkills, type SkillSummary } from "@/lib/skills/catalog";
 import { cn } from "@/lib/utils";
+
+// The composer opens a Claude-style "/" menu when the whole message is a single
+// "/command" token (no spaces yet). This matches that leading token.
+const SLASH_QUERY_RE = /^\/([\w-]*)$/;
 
 const MAX_ATTACHMENT_MB = 10;
 const MAX_ATTACHMENT_BYTES = MAX_ATTACHMENT_MB * 1024 * 1024;
@@ -57,9 +65,71 @@ export function ChatComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [skills, setSkills] = useState<readonly SkillSummary[]>([]);
+  const [skillMenuClosed, setSkillMenuClosed] = useState(false);
+  const [activeSkillIndex, setActiveSkillIndex] = useState(0);
+  const skillsLoadedRef = useRef(false);
   const textareaDisabled = disabled || isBusy || isPreparing;
   const trimmedValue = value.trim();
   const isOverMaxLength = getChatMessageLength(trimmedValue) > maxLength;
+
+  // "/" slash-command menu: open when the whole message is a single "/token".
+  const slashMatch = value.match(SLASH_QUERY_RE);
+  const slashQuery = slashMatch ? slashMatch[1]! : null;
+  const filteredSkills = useMemo(
+    () => (slashQuery === null ? [] : filterSkills(skills, slashQuery)),
+    [skills, slashQuery],
+  );
+  const skillMenuOpen =
+    slashQuery !== null && !skillMenuClosed && !textareaDisabled && filteredSkills.length > 0;
+
+  // Lazily load the user's skills the first time they start a "/" command.
+  useEffect(() => {
+    if (skillsLoadedRef.current || !value.startsWith("/")) {
+      return;
+    }
+
+    skillsLoadedRef.current = true;
+    let cancelled = false;
+
+    void listSkillsAction()
+      .then((loaded) => {
+        if (!cancelled) {
+          setSkills(loaded);
+        }
+      })
+      .catch(() => {
+        skillsLoadedRef.current = false;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [value]);
+
+  useEffect(() => {
+    setActiveSkillIndex(0);
+    if (slashQuery === null) {
+      setSkillMenuClosed(false);
+    }
+  }, [slashQuery]);
+
+  const selectSkill = useCallback(
+    (skill: SkillSummary) => {
+      onChange(skill.prompt);
+      setSkillMenuClosed(true);
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+
+        if (textarea) {
+          textarea.focus({ preventScroll: true });
+          const end = textarea.value.length;
+          textarea.setSelectionRange(end, end);
+        }
+      });
+    },
+    [onChange],
+  );
 
   const addFiles = useCallback((incoming: readonly File[]) => {
     const accepted: File[] = [];
@@ -149,20 +219,62 @@ export function ChatComposer({
     [submitValue],
   );
 
+  const handleChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      // Any manual edit un-dismisses the slash menu so it can reopen.
+      setSkillMenuClosed(false);
+      onChange(event.target.value);
+    },
+    [onChange],
+  );
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (skillMenuOpen) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setActiveSkillIndex((index) => (index + 1) % filteredSkills.length);
+          return;
+        }
+
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setActiveSkillIndex(
+            (index) => (index - 1 + filteredSkills.length) % filteredSkills.length,
+          );
+          return;
+        }
+
+        if (event.key === "Enter" || event.key === "Tab") {
+          event.preventDefault();
+          const skill = filteredSkills[activeSkillIndex] ?? filteredSkills[0];
+
+          if (skill) {
+            selectSkill(skill);
+          }
+
+          return;
+        }
+
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setSkillMenuClosed(true);
+          return;
+        }
+      }
+
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         submitValue();
       }
     },
-    [submitValue],
+    [activeSkillIndex, filteredSkills, selectSkill, skillMenuOpen, submitValue],
   );
 
   const form = (
     <form
       className={cn(
-        "min-w-0 rounded-[14px] border border-border/80 bg-card/95 shadow-sm transition-colors focus-within:border-border focus-within:ring-[1px] focus-within:ring-foreground/5 dark:bg-muted/45 dark:focus-within:ring-white/5",
+        "relative min-w-0 rounded-[14px] border border-border/80 bg-card/95 shadow-sm transition-colors focus-within:border-border focus-within:ring-[1px] focus-within:ring-foreground/5 dark:bg-muted/45 dark:focus-within:ring-white/5",
         className,
       )}
       data-chat-composer
@@ -171,24 +283,61 @@ export function ChatComposer({
       <label className="sr-only" htmlFor={composerId}>
         Message harpy
       </label>
+      {skillMenuOpen ? (
+        <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-lg">
+          <div className="flex items-center gap-1.5 border-b border-border/60 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <SparklesIcon className="size-3" />
+            Skills
+          </div>
+          <ul className="max-h-64 overflow-y-auto py-1" role="listbox">
+            {filteredSkills.map((skill, index) => (
+              <li aria-selected={index === activeSkillIndex} key={skill.slug} role="option">
+                <button
+                  className={cn(
+                    "flex w-full items-start gap-3 px-3 py-2 text-left transition-colors",
+                    index === activeSkillIndex ? "bg-muted" : "hover:bg-muted/60",
+                  )}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    selectSkill(skill);
+                  }}
+                  onMouseEnter={() => setActiveSkillIndex(index)}
+                  type="button"
+                >
+                  <span className="mt-0.5 shrink-0 rounded bg-background px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                    /{skill.slug}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {skill.name}
+                    </span>
+                    {skill.description ? (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {skill.description}
+                      </span>
+                    ) : null}
+                  </span>
+                  {skill.source === "custom" ? (
+                    <span className="mt-0.5 shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-500">
+                      custom
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {files.length > 0 ? (
         <div className="flex flex-wrap gap-1.5 px-3 pt-3 sm:px-4">
           {files.map((file, index) => (
-            <span
-              className="inline-flex max-w-52 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-xs"
+            <AttachmentChip
+              className="max-w-52"
               key={`${file.name}-${index}`}
-            >
-              <PaperclipIcon className="size-3 shrink-0 text-muted-foreground" />
-              <span className="truncate text-foreground">{file.name}</span>
-              <button
-                aria-label={`Remove ${file.name}`}
-                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => removeFile(index)}
-                type="button"
-              >
-                <XIcon className="size-3" />
-              </button>
-            </span>
+              mediaType={file.type}
+              name={file.name}
+              onRemove={() => removeFile(index)}
+            />
           ))}
         </div>
       ) : null}
@@ -202,7 +351,7 @@ export function ChatComposer({
         disabled={textareaDisabled}
         id={composerId}
         maxLength={maxLength}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={handleChange}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
         placeholder={placeholder}

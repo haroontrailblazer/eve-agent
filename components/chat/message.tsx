@@ -6,11 +6,15 @@ import {
   ChevronRightIcon,
   CheckIcon,
   Loader2Icon,
-  PaperclipIcon,
   XIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { AttachmentMeta } from "@/lib/chat/attachments";
+import {
+  parseInlineAttachments,
+  stripInlineAttachments,
+  type AttachmentMeta,
+} from "@/lib/chat/attachments";
+import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { Markdown } from "@/components/chat/markdown";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -45,6 +49,15 @@ export function AgentMessage({
     -1,
   );
   const isUser = message.role === "user";
+  // Prefer the metadata tracked when the file was sent (has the real media
+  // type); fall back to parsing the `[file: …]` placeholders out of the message
+  // text so chips still render after a reload, when the in-memory map is gone.
+  const userAttachments =
+    isUser && attachments && attachments.length > 0
+      ? attachments
+      : isUser
+        ? parseInlineAttachments(userMessageText(message))
+        : [];
 
   return (
     <article
@@ -62,16 +75,14 @@ export function AgentMessage({
             : "w-full max-w-none text-sm leading-relaxed text-foreground",
         )}
       >
-        {isUser && attachments && attachments.length > 0 ? (
+        {isUser && userAttachments.length > 0 ? (
           <div className="mb-1.5 flex flex-wrap gap-1.5">
-            {attachments.map((attachment, index) => (
-              <span
-                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-xs text-foreground"
+            {userAttachments.map((attachment, index) => (
+              <AttachmentChip
                 key={`${attachment.name}-${index}`}
-              >
-                <PaperclipIcon className="size-3 shrink-0 text-muted-foreground" />
-                <span className="truncate">{attachment.name}</span>
-              </span>
+                mediaType={attachment.mediaType}
+                name={attachment.name}
+              />
             ))}
           </div>
         ) : null}
@@ -187,7 +198,20 @@ function AgentMessagePart({
 }
 
 function UserTextPart({ text }: { readonly text: string }) {
-  return <div className="whitespace-pre-wrap break-words">{text}</div>;
+  const clean = stripInlineAttachments(text);
+
+  if (!clean) {
+    return null;
+  }
+
+  return <div className="whitespace-pre-wrap break-words">{clean}</div>;
+}
+
+function userMessageText(message: EveMessage): string {
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .join("\n");
 }
 
 function AssistantTextPart({

@@ -12,8 +12,11 @@ import {
   XIcon,
 } from "@/components/icons";
 import { listMcpConnections } from "@/lib/db/mcp";
+import { listSkills } from "@/lib/db/skills";
 import type { McpConnection } from "@/lib/db/schema";
 import { getServerViewer } from "@/lib/session";
+import { mergeSkills, type SkillSummary } from "@/lib/skills/catalog";
+import { DeleteSkillButton } from "./_components/delete-skill-button";
 import { DisconnectMcpButton } from "./_components/disconnect-mcp-button";
 import { ProfileSignOut } from "./_components/profile-sign-out";
 
@@ -38,12 +41,6 @@ function metaFor(platform: string): PlatformMeta {
     }
   );
 }
-
-const SKILLS = [
-  { name: "Social posting", detail: "Publish to LinkedIn, X, and Threads via connected MCP accounts." },
-  { name: "Workspace tools", detail: "Search and edit Notion, Linear issues, and Sentry via connections." },
-  { name: "Connection management", detail: "Connect, switch, and disconnect MCP accounts on request." },
-];
 
 export default function ProfilePage() {
   return (
@@ -73,6 +70,15 @@ async function ProfileContent() {
   }
 
   const connections = await listMcpConnections(viewer.id);
+  const skills = mergeSkills(
+    (await listSkills(viewer.id)).map((skill) => ({
+      slug: skill.slug,
+      name: skill.name,
+      description: skill.description,
+      prompt: skill.prompt,
+      source: "custom" as const,
+    })),
+  );
 
   return (
     <>
@@ -117,15 +123,12 @@ async function ProfileContent() {
       {/* Skills */}
       <Panel
         icon={<SparklesIcon className="size-4" />}
-        subtitle="What harpy can do for you right now."
+        subtitle="Invoke any of these in chat by typing “/”. Ask harpy to install more."
         title="Skills"
       >
         <ul className="flex flex-col gap-2">
-          {SKILLS.map((skill) => (
-            <li className="rounded-lg border border-border/70 bg-background/40 p-3" key={skill.name}>
-              <p className="text-sm font-medium text-foreground">{skill.name}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{skill.detail}</p>
-            </li>
+          {skills.map((skill) => (
+            <SkillRow key={skill.slug} skill={skill} />
           ))}
         </ul>
       </Panel>
@@ -222,6 +225,36 @@ function ConnectionRow({ connection }: { readonly connection: McpConnection }) {
         {connection.enabled ? "Connected" : "Disabled"}
       </span>
       <DisconnectMcpButton label={meta.label} platform={connection.platform} />
+    </li>
+  );
+}
+
+function SkillRow({ skill }: { readonly skill: SkillSummary }) {
+  return (
+    <li className="flex items-start gap-3 rounded-lg border border-border/70 bg-background/40 p-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-medium text-foreground">{skill.name}</p>
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+            /{skill.slug}
+          </code>
+          {skill.source === "custom" ? (
+            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
+              custom
+            </span>
+          ) : (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              built-in
+            </span>
+          )}
+        </div>
+        {skill.description ? (
+          <p className="mt-0.5 text-xs text-muted-foreground">{skill.description}</p>
+        ) : null}
+      </div>
+      {skill.source === "custom" ? (
+        <DeleteSkillButton name={skill.name} slug={skill.slug} />
+      ) : null}
     </li>
   );
 }
