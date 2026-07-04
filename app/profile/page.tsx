@@ -14,6 +14,7 @@ import {
 import { listMcpConnections } from "@/lib/db/mcp";
 import type { McpConnection } from "@/lib/db/schema";
 import { getServerViewer } from "@/lib/session";
+import { DisconnectMcpButton } from "./_components/disconnect-mcp-button";
 import { ProfileSignOut } from "./_components/profile-sign-out";
 
 export const metadata = { title: "Profile — harpy" };
@@ -220,6 +221,7 @@ function ConnectionRow({ connection }: { readonly connection: McpConnection }) {
       >
         {connection.enabled ? "Connected" : "Disabled"}
       </span>
+      <DisconnectMcpButton label={meta.label} platform={connection.platform} />
     </li>
   );
 }

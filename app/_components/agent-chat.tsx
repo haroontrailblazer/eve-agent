@@ -46,7 +46,12 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HarpyLogo } from "./harpy-logo";
 import { HarpyWordmark } from "./harpy-wordmark";
-import { buildMessageContent, type Attachment } from "@/lib/chat/attachments";
+import {
+  buildMessageContent,
+  toAttachmentMeta,
+  type Attachment,
+  type AttachmentMeta,
+} from "@/lib/chat/attachments";
 import { isChatTurnSettledEvent } from "@/lib/chat/events";
 import { getChatMessageLengthError } from "@/lib/chat/limits";
 import type { ActiveChat, SetupStatus, Viewer } from "@/lib/chat/types";
@@ -722,6 +727,7 @@ export function AgentChatSession({
   const streamEventsRef = useRef<HandleMessageStreamEvent[]>([]);
   const localEventsRef = useRef<HandleMessageStreamEvent[]>([]);
   const finalizeTimerRef = useRef<number | null>(null);
+  const sentAttachmentsRef = useRef<Map<string, readonly AttachmentMeta[]>>(new Map());
   const onSessionStartedRef = useRef<(session: SessionState) => Promise<void> | void>(
     () => {},
   );
@@ -934,11 +940,15 @@ export function AgentChatSession({
   const pendingAuthorizations = getPendingAuthorizations(displayEvents);
   const isWaitingForAuthorization = pendingAuthorizations.length > 0;
   const hasOpenTurn = useMemo(() => hasOpenChatTurn(displayEvents), [displayEvents]);
+  // Only treat a turn as "open" while the agent is actually working. A missed
+  // settle event (e.g. a stream hiccup at the turn boundary) would otherwise
+  // leave the composer disabled and "Thinking…" stuck after the backend finished.
+  const isTurnOpen = hasOpenTurn && agent.status !== "ready";
   const isBusy =
     isResuming ||
     hasLocalPendingUserMessage ||
     (!isWaitingForAuthorization &&
-      (hasOpenTurn || agent.status === "submitted" || agent.status === "streaming"));
+      (isTurnOpen || agent.status === "submitted" || agent.status === "streaming"));
   const isTurnBlocked = isBusy || isFinalizingTurn;
   const pendingMessage = pendingUserMessage
     ? createPendingUserMessage(displayChatId, pendingUserMessage)
@@ -966,7 +976,8 @@ export function AgentChatSession({
   const isChatRoute = Boolean(shellActiveChatId || chatId);
   const showThinking =
     !isWaitingForAuthorization &&
-    (Boolean(pendingMessage || localPendingMessage) || hasOpenTurn || isTurnBlocked);
+    agent.status !== "streaming" &&
+    (Boolean(pendingMessage || localPendingMessage) || isTurnOpen || isTurnBlocked);
   const thinkingPresence = useThinkingPresence(showThinking);
   const displayError = clientError ?? agent.error?.message ?? null;
   const toastError = displayError && dismissedError !== displayError ? displayError : null;
@@ -1028,6 +1039,10 @@ export function AgentChatSession({
 
       if ((!message && !attachments?.length) || isTurnBlocked || localPendingUserMessageRef.current) {
         return;
+      }
+
+      if (attachments?.length) {
+        sentAttachmentsRef.current.set(message, toAttachmentMeta(attachments));
       }
 
       const lengthError = getChatMessageLengthError(message);
@@ -1541,6 +1556,11 @@ export function AgentChatSession({
               <ChatConversationContent>
                 {visibleMessages.map((message, index) => (
                   <AgentMessage
+                    attachments={
+                      message.role === "user"
+                        ? sentAttachmentsRef.current.get(getMessageText(message) ?? "")
+                        : undefined
+                    }
                     canRespond={
                       !isTurnBlocked &&
                       !isWaitingForAuthorization &&

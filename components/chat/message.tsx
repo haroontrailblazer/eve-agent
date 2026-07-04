@@ -6,9 +6,11 @@ import {
   ChevronRightIcon,
   CheckIcon,
   Loader2Icon,
+  PaperclipIcon,
   XIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { AttachmentMeta } from "@/lib/chat/attachments";
 import { Markdown } from "@/components/chat/markdown";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -26,11 +28,13 @@ export type AgentInputResponse = {
 };
 
 export function AgentMessage({
+  attachments,
   canRespond,
   isStreaming,
   message,
   onInputResponses,
 }: {
+  readonly attachments?: readonly AttachmentMeta[];
   readonly canRespond: boolean;
   readonly isStreaming: boolean;
   readonly message: EveMessage;
@@ -58,6 +62,19 @@ export function AgentMessage({
             : "w-full max-w-none text-sm leading-relaxed text-foreground",
         )}
       >
+        {isUser && attachments && attachments.length > 0 ? (
+          <div className="mb-1.5 flex flex-wrap gap-1.5">
+            {attachments.map((attachment, index) => (
+              <span
+                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-xs text-foreground"
+                key={`${attachment.name}-${index}`}
+              >
+                <PaperclipIcon className="size-3 shrink-0 text-muted-foreground" />
+                <span className="truncate">{attachment.name}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
         <AgentMessageParts
           canRespond={canRespond}
           isUser={isUser}

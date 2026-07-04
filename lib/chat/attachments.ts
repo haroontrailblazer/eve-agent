@@ -10,6 +10,21 @@ export type Attachment = {
   readonly filename: string;
 };
 
+// Lightweight metadata (no base64 payload) used to render clean attachment
+// chips in the sent message bubble — eve's message reducer drops file parts,
+// so the UI tracks these itself.
+export type AttachmentMeta = {
+  readonly name: string;
+  readonly mediaType: string;
+};
+
+export function toAttachmentMeta(attachments: readonly Attachment[]): AttachmentMeta[] {
+  return attachments.map((attachment) => ({
+    mediaType: attachment.mediaType,
+    name: attachment.filename,
+  }));
+}
+
 const EXT_MEDIA_TYPES: Record<string, string> = {
   css: "text/css",
   csv: "text/csv",
