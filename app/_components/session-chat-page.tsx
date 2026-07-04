@@ -22,6 +22,7 @@ import {
   readPendingChatMessage,
   writePendingChatMessage,
 } from "@/lib/chat/provisional-chat";
+import { filesToAttachments, readPendingAttachments } from "@/lib/chat/attachments";
 import type { ActiveChat, SetupStatus } from "@/lib/chat/types";
 
 const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
@@ -283,13 +284,19 @@ export function SessionChatPage({
 
     pendingConsumedRef.current = true;
 
-    void controller.sendMessage(pendingUserMessage, {
-      clearDraft: () => setDraft(""),
-      restoreDraft: (value) => {
-        setPendingUserMessage(null);
-        setDraft(value);
+    const pendingAttachments = readPendingAttachments(chatId);
+
+    void controller.sendMessage(
+      pendingUserMessage,
+      {
+        clearDraft: () => setDraft(""),
+        restoreDraft: (value) => {
+          setPendingUserMessage(null);
+          setDraft(value);
+        },
       },
-    });
+      pendingAttachments.length > 0 ? pendingAttachments : undefined,
+    );
   }, [
     chatId,
     controllerReady,
@@ -318,7 +325,7 @@ export function SessionChatPage({
     [],
   );
 
-  const handleComposerSubmit = useCallback(async (text: string) => {
+  const handleComposerSubmit = useCallback(async (text: string, files: File[]) => {
     if (isLoadingChat) {
       setClientError("Chat history is still loading.");
       return;
@@ -331,10 +338,16 @@ export function SessionChatPage({
       return;
     }
 
-    await controller.sendMessage(text, {
-      clearDraft: () => setDraft(""),
-      restoreDraft: setDraft,
-    });
+    const attachments = files.length > 0 ? await filesToAttachments(files) : undefined;
+
+    await controller.sendMessage(
+      text,
+      {
+        clearDraft: () => setDraft(""),
+        restoreDraft: setDraft,
+      },
+      attachments,
+    );
   }, [isLoadingChat]);
 
   const handleComposerStop = useCallback(() => {

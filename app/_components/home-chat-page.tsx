@@ -17,6 +17,7 @@ import {
   createProvisionalChatId,
   writePendingChatMessage,
 } from "@/lib/chat/provisional-chat";
+import { filesToAttachments, writePendingAttachments } from "@/lib/chat/attachments";
 import type { SetupStatus } from "@/lib/chat/types";
 
 const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
@@ -71,10 +72,17 @@ export function HomeChatPage() {
   }, [clientError]);
 
   const handleSubmit = useCallback(
-    (text: string) => {
+    async (text: string, files: File[]) => {
       const message = text.trim();
 
-      if (!message || submittingRef.current) {
+      if (submittingRef.current) {
+        return;
+      }
+
+      if (!message) {
+        if (files.length > 0) {
+          setClientError("Add a short message to send with your files.");
+        }
         return;
       }
 
@@ -113,6 +121,14 @@ export function HomeChatPage() {
         setDraft(message);
         setClientError("Failed to start chat.");
         return;
+      }
+
+      if (files.length > 0) {
+        try {
+          writePendingAttachments(provisionalChatId, await filesToAttachments(files));
+        } catch {
+          // Attachments couldn't be read; continue with the text-only message.
+        }
       }
 
       setActiveChatId(provisionalChatId);
