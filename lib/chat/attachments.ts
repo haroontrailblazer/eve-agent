@@ -100,14 +100,19 @@ export function buildMessageContent(
 
 const pendingKey = (chatId: string) => `harpy-pending-attachments:${chatId}`;
 
-export function writePendingAttachments(chatId: string, attachments: readonly Attachment[]): void {
+export function writePendingAttachments(
+  chatId: string,
+  attachments: readonly Attachment[],
+): boolean {
   if (attachments.length === 0) {
-    return;
+    return true;
   }
   try {
     window.sessionStorage.setItem(pendingKey(chatId), JSON.stringify(attachments));
+    return true;
   } catch {
-    // sessionStorage full or unavailable — attachments are simply dropped.
+    // sessionStorage full (large files) or unavailable.
+    return false;
   }
 }
 

@@ -125,7 +125,15 @@ export function HomeChatPage() {
 
       if (files.length > 0) {
         try {
-          writePendingAttachments(provisionalChatId, await filesToAttachments(files));
+          const stored = writePendingAttachments(
+            provisionalChatId,
+            await filesToAttachments(files),
+          );
+          if (!stored) {
+            setClientError(
+              "Those files are too large to carry from the start page — open the chat and attach them there.",
+            );
+          }
         } catch {
           // Attachments couldn't be read; continue with the text-only message.
         }

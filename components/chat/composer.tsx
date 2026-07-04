@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type ClipboardEvent,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -16,6 +17,12 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getChatMessageLength, MAX_CHAT_MESSAGE_CHARS } from "@/lib/chat/limits";
 import { cn } from "@/lib/utils";
+
+const MAX_ATTACHMENT_MB = 10;
+const MAX_ATTACHMENT_BYTES = MAX_ATTACHMENT_MB * 1024 * 1024;
+// Paste more than this many characters and it becomes a text attachment instead
+// of flooding the input — the way claude.ai handles big pastes.
+const PASTE_TO_FILE_CHARS = 1800;
 
 export function ChatComposer({
   autoFocus = true,
@@ -49,17 +56,57 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const textareaDisabled = disabled || isBusy || isPreparing;
   const trimmedValue = value.trim();
   const isOverMaxLength = getChatMessageLength(trimmedValue) > maxLength;
 
-  const handleFilesSelected = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(event.target.files ?? []);
-    if (selected.length > 0) {
-      setFiles((current) => [...current, ...selected]);
+  const addFiles = useCallback((incoming: readonly File[]) => {
+    const accepted: File[] = [];
+    let hasOversized = false;
+
+    for (const file of incoming) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        hasOversized = true;
+      } else {
+        accepted.push(file);
+      }
     }
-    event.target.value = "";
+
+    setAttachmentError(hasOversized ? `Each file must be under ${MAX_ATTACHMENT_MB} MB.` : null);
+
+    if (accepted.length > 0) {
+      setFiles((current) => [...current, ...accepted]);
+    }
   }, []);
+
+  const handleFilesSelected = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      addFiles(Array.from(event.target.files ?? []));
+      event.target.value = "";
+    },
+    [addFiles],
+  );
+
+  const handlePaste = useCallback(
+    (event: ClipboardEvent<HTMLTextAreaElement>) => {
+      const pastedFiles = Array.from(event.clipboardData.files ?? []);
+
+      if (pastedFiles.length > 0) {
+        event.preventDefault();
+        addFiles(pastedFiles);
+        return;
+      }
+
+      const text = event.clipboardData.getData("text");
+
+      if (text.length > PASTE_TO_FILE_CHARS) {
+        event.preventDefault();
+        addFiles([new File([text], "Pasted text.txt", { type: "text/plain" })]);
+      }
+    },
+    [addFiles],
+  );
 
   const removeFile = useCallback((index: number) => {
     setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index));
@@ -91,6 +138,7 @@ export function ChatComposer({
 
     void onSubmit(text, files);
     setFiles([]);
+    setAttachmentError(null);
   }, [disabled, files, isBusy, isPreparing, maxLength, onSubmit, value]);
 
   const handleSubmit = useCallback(
@@ -144,6 +192,9 @@ export function ChatComposer({
           ))}
         </div>
       ) : null}
+      {attachmentError ? (
+        <p className="px-3 pt-2 text-xs text-destructive sm:px-4">{attachmentError}</p>
+      ) : null}
       <textarea
         autoFocus={autoFocus}
         className="max-h-32 min-h-12 w-full resize-none bg-transparent px-3 pt-3 pb-1 text-base leading-6 outline-none placeholder:text-muted-foreground/45 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 md:text-[15px] dark:placeholder:text-muted-foreground/60"
@@ -153,6 +204,7 @@ export function ChatComposer({
         maxLength={maxLength}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         placeholder={placeholder}
         ref={textareaRef}
         rows={2}

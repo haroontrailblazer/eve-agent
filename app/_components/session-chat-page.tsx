@@ -22,7 +22,11 @@ import {
   readPendingChatMessage,
   writePendingChatMessage,
 } from "@/lib/chat/provisional-chat";
-import { filesToAttachments, readPendingAttachments } from "@/lib/chat/attachments";
+import {
+  filesToAttachments,
+  readPendingAttachments,
+  writePendingAttachments,
+} from "@/lib/chat/attachments";
 import type { ActiveChat, SetupStatus } from "@/lib/chat/types";
 
 const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
@@ -109,6 +113,10 @@ export function SessionChatPage({
           return;
         }
 
+        const carriedAttachments = readPendingAttachments(chatId);
+        if (carriedAttachments.length > 0) {
+          writePendingAttachments(created.id, carriedAttachments);
+        }
         writePendingChatMessage(created.id, pendingMessage);
         clearPendingChatMessage(chatId);
         touchChat(created);
