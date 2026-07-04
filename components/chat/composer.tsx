@@ -41,7 +41,7 @@ export function ChatComposer({
   readonly maxLength?: number;
   readonly onChange: (value: string) => void;
   readonly onStop: () => void;
-  readonly onSubmit: (value: string) => void | Promise<void>;
+  readonly onSubmit: (value: string, files: File[]) => void | Promise<void>;
   readonly placeholder?: string;
   readonly value: string;
 }) {
@@ -79,13 +79,19 @@ export function ChatComposer({
 
   const submitValue = useCallback(() => {
     const text = value.trim();
-    if (!text || disabled || isBusy || isPreparing || getChatMessageLength(text) > maxLength) {
+    if (
+      (!text && files.length === 0) ||
+      disabled ||
+      isBusy ||
+      isPreparing ||
+      getChatMessageLength(text) > maxLength
+    ) {
       return;
     }
 
-    void onSubmit(text);
+    void onSubmit(text, files);
     setFiles([]);
-  }, [disabled, isBusy, isPreparing, maxLength, onSubmit, value]);
+  }, [disabled, files, isBusy, isPreparing, maxLength, onSubmit, value]);
 
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
@@ -155,6 +161,7 @@ export function ChatComposer({
       <div className="flex min-h-9 items-center justify-between gap-2 px-3 pt-1 pb-2 sm:gap-3 sm:px-4">
         <div className="-ml-2 flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           <input
+            accept="image/*,application/pdf,text/*,.json,.csv,.md,.ts,.tsx,.js,.py"
             aria-hidden="true"
             className="hidden"
             multiple
@@ -199,7 +206,9 @@ export function ChatComposer({
             <Button
               aria-label="Send message"
               className="size-6 cursor-pointer rounded-md bg-foreground text-background hover:bg-foreground/90 disabled:cursor-not-allowed disabled:pointer-events-auto disabled:opacity-30"
-              disabled={disabled || trimmedValue.length === 0 || isOverMaxLength}
+              disabled={
+                disabled || (trimmedValue.length === 0 && files.length === 0) || isOverMaxLength
+              }
               size="icon-xs"
               type="submit"
             >

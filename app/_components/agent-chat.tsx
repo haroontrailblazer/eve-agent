@@ -46,6 +46,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HarpyLogo } from "./harpy-logo";
 import { HarpyWordmark } from "./harpy-wordmark";
+import { buildMessageContent, type Attachment } from "@/lib/chat/attachments";
 import { isChatTurnSettledEvent } from "@/lib/chat/events";
 import { getChatMessageLengthError } from "@/lib/chat/limits";
 import type { ActiveChat, SetupStatus, Viewer } from "@/lib/chat/types";
@@ -70,7 +71,11 @@ export type DraftHandlers = {
 
 export type AgentChatController = {
   readonly reset: () => void;
-  readonly sendMessage: (text: string, draftHandlers: DraftHandlers) => Promise<void>;
+  readonly sendMessage: (
+    text: string,
+    draftHandlers: DraftHandlers,
+    attachments?: readonly Attachment[],
+  ) => Promise<void>;
   readonly stop: () => void;
 };
 
@@ -1018,10 +1023,10 @@ export function AgentChatSession({
   );
 
   const sendMessage = useCallback(
-    async (text: string, draftHandlers: DraftHandlers) => {
+    async (text: string, draftHandlers: DraftHandlers, attachments?: readonly Attachment[]) => {
       const message = text.trim();
 
-      if (!message || isTurnBlocked || localPendingUserMessageRef.current) {
+      if ((!message && !attachments?.length) || isTurnBlocked || localPendingUserMessageRef.current) {
         return;
       }
 
@@ -1113,7 +1118,7 @@ export function AgentChatSession({
         startFinalizingTurn();
         await agent.send({
           clientContext: createConnectionClientContext(enabledConnections),
-          message,
+          message: buildMessageContent(message, attachments),
         });
       } catch (error) {
         if (isAbortError(error)) {
