@@ -1,11 +1,13 @@
 "use client";
 
-import { ArrowUpIcon, Loader2Icon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, Loader2Icon, PaperclipIcon, SquareIcon, XIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
   useId,
   useRef,
+  useState,
+  type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -45,9 +47,23 @@ export function ChatComposer({
 }) {
   const composerId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const textareaDisabled = disabled || isBusy || isPreparing;
   const trimmedValue = value.trim();
   const isOverMaxLength = getChatMessageLength(trimmedValue) > maxLength;
+
+  const handleFilesSelected = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files ?? []);
+    if (selected.length > 0) {
+      setFiles((current) => [...current, ...selected]);
+    }
+    event.target.value = "";
+  }, []);
+
+  const removeFile = useCallback((index: number) => {
+    setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  }, []);
 
   useEffect(() => {
     if (!autoFocus || textareaDisabled) {
@@ -68,6 +84,7 @@ export function ChatComposer({
     }
 
     void onSubmit(text);
+    setFiles([]);
   }, [disabled, isBusy, isPreparing, maxLength, onSubmit, value]);
 
   const handleSubmit = useCallback(
@@ -98,8 +115,29 @@ export function ChatComposer({
       onSubmit={handleSubmit}
     >
       <label className="sr-only" htmlFor={composerId}>
-        Message eve
+        Message harpy
       </label>
+      {files.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 px-3 pt-3 sm:px-4">
+          {files.map((file, index) => (
+            <span
+              className="inline-flex max-w-52 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-xs"
+              key={`${file.name}-${index}`}
+            >
+              <PaperclipIcon className="size-3 shrink-0 text-muted-foreground" />
+              <span className="truncate text-foreground">{file.name}</span>
+              <button
+                aria-label={`Remove ${file.name}`}
+                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() => removeFile(index)}
+                type="button"
+              >
+                <XIcon className="size-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
       <textarea
         autoFocus={autoFocus}
         className="max-h-32 min-h-12 w-full resize-none bg-transparent px-3 pt-3 pb-1 text-base leading-6 outline-none placeholder:text-muted-foreground/45 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 md:text-[15px] dark:placeholder:text-muted-foreground/60"
@@ -116,6 +154,24 @@ export function ChatComposer({
       />
       <div className="flex min-h-9 items-center justify-between gap-2 px-3 pt-1 pb-2 sm:gap-3 sm:px-4">
         <div className="-ml-2 flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+          <input
+            aria-hidden="true"
+            className="hidden"
+            multiple
+            onChange={handleFilesSelected}
+            ref={fileInputRef}
+            tabIndex={-1}
+            type="file"
+          />
+          <button
+            aria-label="Attach files"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/75 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={disabled}
+            onClick={() => fileInputRef.current?.click()}
+            type="button"
+          >
+            <PaperclipIcon className="size-4" />
+          </button>
           {footerStart ?? <span className="block h-8" />}
         </div>
         <div className="flex shrink-0 items-center">
