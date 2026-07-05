@@ -142,8 +142,25 @@ export const skill = pgTable(
   (table) => [uniqueIndex("idx_skill_user_slug").on(table.userId, table.slug)],
 );
 
+export const generatedImage = pgTable(
+  "generated_image",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    mediaType: text("media_type").notNull().default("image/png"),
+    // Base64-encoded image bytes (no `data:` prefix). Served via /api/images/[id].
+    data: text("data").notNull(),
+    prompt: text("prompt").notNull().default(""),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_generated_image_user").on(table.userId, table.createdAt)],
+);
+
 export type Chat = typeof chat.$inferSelect;
 export type ChatEvent = typeof chatEvent.$inferSelect;
 export type User = typeof user.$inferSelect;
 export type McpConnection = typeof mcpConnection.$inferSelect;
 export type Skill = typeof skill.$inferSelect;
+export type GeneratedImage = typeof generatedImage.$inferSelect;

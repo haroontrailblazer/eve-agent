@@ -5,7 +5,6 @@ import {
   PanelLeftIcon,
   PlusIcon,
 } from "lucide-react";
-import { TemplateFooterLinks } from "@/components/chat/template-footer-links";
 import { VercelIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { HarpyLogo } from "./harpy-logo";
@@ -74,11 +73,6 @@ export function AgentChatSkeleton({ mode }: { readonly mode: "chat" | "new" }) {
         </div>
 
         <AgentChatContentSkeleton mode={mode} />
-        {isNew ? (
-          <div className="shrink-0 pb-4 sm:pb-6">
-            <TemplateFooterLinks />
-          </div>
-        ) : null}
       </main>
     </div>
   );

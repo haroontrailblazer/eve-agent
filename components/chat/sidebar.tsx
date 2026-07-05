@@ -155,11 +155,12 @@ export function ChatSidebar({
                     <span className="block truncate">{chat.title}</span>
                     <span className="sr-only">Updated {formatHistoryTime(chat.updatedAt)}</span>
                   </Link>
-                  <DropdownMenu>
+                  <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>
                       <Button
                         aria-label="Chat actions"
-                        className="absolute top-1/2 right-1 -translate-y-1/2 opacity-0 transition-opacity hover:bg-muted group-hover/session:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                        className="absolute top-1/2 right-1 -translate-y-1/2 opacity-100 transition-opacity hover:bg-muted focus-visible:opacity-100 data-[state=open]:opacity-100 md:opacity-0 md:group-hover/session:opacity-100"
+                        onClick={(event) => event.stopPropagation()}
                         size="icon-xs"
                         type="button"
                         variant="ghost"

@@ -21,7 +21,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-const STREAM_TEXT_TICK_MS = 60;
+const STREAM_TEXT_TICK_MS = 40;
 const STREAM_TEXT_CACHE_LIMIT = 40;
 const streamingTextCache = new Map<string, string>();
 
@@ -76,7 +76,7 @@ export function AgentMessage({
         )}
       >
         {isUser && userAttachments.length > 0 ? (
-          <div className="mb-1.5 flex flex-wrap gap-1.5">
+          <div className="mb-2 flex flex-wrap gap-2">
             {userAttachments.map((attachment, index) => (
               <AttachmentChip
                 key={`${attachment.name}-${index}`}
@@ -342,25 +342,12 @@ function nextStreamingText(current: string, target: string, catchUp = false) {
   }
 
   const remaining = target.length - current.length;
-  const step = catchUp
-    ? remaining > 160
-      ? 18
-      : remaining > 80
-        ? 12
-        : remaining > 32
-          ? 7
-          : remaining > 12
-            ? 4
-            : 2
-    : remaining > 160
-      ? 6
-      : remaining > 80
-        ? 5
-        : remaining > 32
-          ? 3
-          : remaining > 12
-            ? 2
-            : 1;
+  // Reveal a share of the backlog each tick so the text keeps pace with fast
+  // token streams instead of lagging seconds behind. A bigger backlog reveals
+  // in bigger steps; catch-up (after the stream ends) drains faster still.
+  const divisor = catchUp ? 3 : 7;
+  const minStep = catchUp ? 6 : 2;
+  const step = Math.max(minStep, Math.ceil(remaining / divisor));
 
   return target.slice(0, current.length + Math.min(remaining, step));
 }

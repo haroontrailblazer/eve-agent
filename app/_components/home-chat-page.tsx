@@ -11,7 +11,6 @@ import { useChatShell } from "@/app/_components/chat-shell-context";
 import { HarpyLogo } from "@/app/_components/harpy-logo";
 import { HarpyWordmark } from "@/app/_components/harpy-wordmark";
 import { ChatComposer } from "@/components/chat/composer";
-import { TemplateFooterLinks } from "@/components/chat/template-footer-links";
 import { getChatMessageLengthError } from "@/lib/chat/limits";
 import {
   createProvisionalChatId,
@@ -194,7 +193,6 @@ export function HomeChatPage() {
             />
           </div>
         </div>
-        <TemplateFooterLinks />
       </div>
     </div>
   );

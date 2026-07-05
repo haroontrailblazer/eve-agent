@@ -111,6 +111,19 @@ const markdownComponents: MarkdownProps["components"] = {
       {...props}
     />
   ),
+  img: ({ className, alt, ...props }) => (
+    // Generated/remote images from the agent (e.g. the image tool). next/image
+    // isn't usable for arbitrary same-origin/remote sources rendered in markdown.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      alt={alt ?? ""}
+      className={cn(
+        "my-3 mx-3 max-h-[28rem] w-auto max-w-[calc(100%-1.5rem)] rounded-xl border border-border",
+        className,
+      )}
+      {...props}
+    />
+  ),
 };
 
 export const Markdown = memo(function Markdown({ className, ...props }: MarkdownProps) {

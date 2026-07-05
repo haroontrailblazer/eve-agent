@@ -46,6 +46,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HarpyLogo } from "./harpy-logo";
 import { HarpyWordmark } from "./harpy-wordmark";
+import { listSkillsAction } from "@/app/actions/skills";
 import {
   buildMessageContent,
   stripInlineAttachments,
@@ -53,6 +54,7 @@ import {
   type Attachment,
   type AttachmentMeta,
 } from "@/lib/chat/attachments";
+import type { SkillSummary } from "@/lib/skills/catalog";
 import { isChatTurnSettledEvent } from "@/lib/chat/events";
 import { getChatMessageLengthError } from "@/lib/chat/limits";
 import type { ActiveChat, SetupStatus, Viewer } from "@/lib/chat/types";
@@ -729,6 +731,7 @@ export function AgentChatSession({
   const localEventsRef = useRef<HandleMessageStreamEvent[]>([]);
   const finalizeTimerRef = useRef<number | null>(null);
   const sentAttachmentsRef = useRef<Map<string, readonly AttachmentMeta[]>>(new Map());
+  const skillsRef = useRef<readonly SkillSummary[] | null>(null);
   const onSessionStartedRef = useRef<(session: SessionState) => Promise<void> | void>(
     () => {},
   );
@@ -1132,8 +1135,17 @@ export function AgentChatSession({
 
       try {
         startFinalizingTurn();
+
+        if (message.startsWith("/") && !skillsRef.current) {
+          try {
+            skillsRef.current = await listSkillsAction();
+          } catch {
+            // Skill catalog is best-effort; fall back to the raw command.
+          }
+        }
+
         await agent.send({
-          clientContext: createConnectionClientContext(enabledConnections),
+          clientContext: buildTurnClientContext(message, enabledConnections, skillsRef.current),
           message: buildMessageContent(message, attachments),
         });
       } catch (error) {
@@ -1491,6 +1503,24 @@ export function AgentChatSession({
   useEffect(() => {
     setDismissedError(null);
   }, [displayError]);
+
+  // Keep the user's skill catalog on hand so a "/slug" command can be expanded
+  // into the skill's prompt via client context when a message is sent.
+  useEffect(() => {
+    let cancelled = false;
+
+    void listSkillsAction()
+      .then((loaded) => {
+        if (!cancelled) {
+          skillsRef.current = loaded;
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewer]);
 
   useEffect(() => {
     if (
@@ -2006,6 +2036,43 @@ function createConnectionClientContext(enabledConnections: EnabledConnections) {
   }
 
   return "The user has disabled all external connections for this turn. Do not search or call connection tools unless the user enables a connection first.";
+}
+
+// Combine the per-turn connection context with a skill instruction when the
+// message begins with a "/slug" the user invoked from the slash menu.
+function buildTurnClientContext(
+  message: string,
+  enabledConnections: EnabledConnections,
+  skills: readonly SkillSummary[] | null,
+): string {
+  const connectionContext = createConnectionClientContext(enabledConnections);
+  const skillContext = buildSkillClientContext(message, skills);
+
+  return skillContext ? `${connectionContext}\n\n${skillContext}` : connectionContext;
+}
+
+function buildSkillClientContext(
+  message: string,
+  skills: readonly SkillSummary[] | null,
+): string | null {
+  if (!skills || !message.startsWith("/")) {
+    return null;
+  }
+
+  const match = message.match(/^\/([\w-]+)/);
+
+  if (!match) {
+    return null;
+  }
+
+  const slug = match[1]!.toLowerCase();
+  const skill = skills.find((entry) => entry.slug === slug);
+
+  if (!skill || !skill.prompt.trim()) {
+    return null;
+  }
+
+  return `The user invoked the "/${skill.slug}" skill. Treat the text after the "/${skill.slug}" command as the input and apply this instruction to it: ${skill.prompt.trim()}`;
 }
 
 function useThinkingPresence(active: boolean) {

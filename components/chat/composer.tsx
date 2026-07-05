@@ -116,7 +116,9 @@ export function ChatComposer({
 
   const selectSkill = useCallback(
     (skill: SkillSummary) => {
-      onChange(skill.prompt);
+      // Insert just the "/slug " command so only the command shows in the chat.
+      // The agent expands it into the skill's prompt via client context.
+      onChange(`/${skill.slug} `);
       setSkillMenuClosed(true);
       window.requestAnimationFrame(() => {
         const textarea = textareaRef.current;
@@ -294,7 +296,7 @@ export function ChatComposer({
               <li aria-selected={index === activeSkillIndex} key={skill.slug} role="option">
                 <button
                   className={cn(
-                    "flex w-full items-start gap-3 px-3 py-2 text-left transition-colors",
+                    "flex w-full items-center gap-3 px-3 py-2 text-left transition-colors",
                     index === activeSkillIndex ? "bg-muted" : "hover:bg-muted/60",
                   )}
                   onMouseDown={(event) => {
@@ -304,21 +306,14 @@ export function ChatComposer({
                   onMouseEnter={() => setActiveSkillIndex(index)}
                   type="button"
                 >
-                  <span className="mt-0.5 shrink-0 rounded bg-background px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                  <span className="shrink-0 rounded bg-background px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                     /{skill.slug}
                   </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">
-                      {skill.name}
-                    </span>
-                    {skill.description ? (
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {skill.description}
-                      </span>
-                    ) : null}
+                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                    {skill.description || skill.name}
                   </span>
                   {skill.source === "custom" ? (
-                    <span className="mt-0.5 shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-500">
+                    <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-500">
                       custom
                     </span>
                   ) : null}
@@ -329,10 +324,10 @@ export function ChatComposer({
         </div>
       ) : null}
       {files.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5 px-3 pt-3 sm:px-4">
+        <div className="flex flex-wrap gap-2 px-3 pt-3 sm:px-4">
           {files.map((file, index) => (
             <AttachmentChip
-              className="max-w-52"
+              file={file}
               key={`${file.name}-${index}`}
               mediaType={file.type}
               name={file.name}
