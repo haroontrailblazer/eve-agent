@@ -16,12 +16,16 @@ export type Attachment = {
 export type AttachmentMeta = {
   readonly name: string;
   readonly mediaType: string;
+  readonly url?: string;
 };
 
 export function toAttachmentMeta(attachments: readonly Attachment[]): AttachmentMeta[] {
   return attachments.map((attachment) => ({
     mediaType: attachment.mediaType,
     name: attachment.filename,
+    // Keep the data URL for images so the sent bubble can render a thumbnail
+    // in-session (the eve reducer drops file bytes, so this is the only source).
+    url: attachment.mediaType.startsWith("image/") ? attachment.data : undefined,
   }));
 }
 

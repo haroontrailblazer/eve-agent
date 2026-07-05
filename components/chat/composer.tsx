@@ -13,6 +13,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
+  type UIEvent,
 } from "react";
 import { listSkillsAction } from "@/app/actions/skills";
 import { AttachmentChip } from "@/components/chat/attachment-chip";
@@ -25,6 +26,9 @@ import { cn } from "@/lib/utils";
 // The composer opens a Claude-style "/" menu when the whole message is a single
 // "/command" token (no spaces yet). This matches that leading token.
 const SLASH_QUERY_RE = /^\/([\w-]*)$/;
+// The leading "/command" token (up to the first space) — greyed in the input
+// once it resolves to a real skill, like claude.ai.
+const LEADING_COMMAND_RE = /^\/([\w-]+)(?=\s|$)/;
 
 const MAX_ATTACHMENT_MB = 10;
 const MAX_ATTACHMENT_BYTES = MAX_ATTACHMENT_MB * 1024 * 1024;
@@ -42,6 +46,7 @@ export function ChatComposer({
   isPreparing = false,
   maxLength = MAX_CHAT_MESSAGE_CHARS,
   onChange,
+  onStop,
   onSubmit,
   placeholder = "Ask eve anything...",
   value,
@@ -63,6 +68,7 @@ export function ChatComposer({
   const composerId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [skills, setSkills] = useState<readonly SkillSummary[]>([]);
@@ -82,6 +88,17 @@ export function ChatComposer({
   );
   const skillMenuOpen =
     slashQuery !== null && !skillMenuClosed && !textareaDisabled && filteredSkills.length > 0;
+
+  // Grey out the leading "/command" once it resolves to a real skill (e.g. just
+  // after picking one from the menu). A textarea can't colour part of its text,
+  // so a mirror layer renders the highlight behind a transparent-text textarea.
+  const commandMatch = value.match(LEADING_COMMAND_RE);
+  const commandSlug = commandMatch ? commandMatch[1]!.toLowerCase() : null;
+  const highlightedCommand =
+    commandSlug !== null && skills.some((skill) => skill.slug === commandSlug)
+      ? commandMatch![0]
+      : null;
+  const isCommandHighlighted = highlightedCommand !== null && !textareaDisabled;
 
   // Lazily load the user's skills the first time they start a "/" command.
   useEffect(() => {
@@ -230,6 +247,16 @@ export function ChatComposer({
     [onChange],
   );
 
+  // Keep the highlight mirror scrolled in lockstep with the textarea.
+  const syncHighlightScroll = useCallback((event: UIEvent<HTMLTextAreaElement>) => {
+    const highlight = highlightRef.current;
+
+    if (highlight) {
+      highlight.scrollTop = event.currentTarget.scrollTop;
+      highlight.scrollLeft = event.currentTarget.scrollLeft;
+    }
+  }, []);
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if (skillMenuOpen) {
@@ -339,21 +366,37 @@ export function ChatComposer({
       {attachmentError ? (
         <p className="px-3 pt-2 text-xs text-destructive sm:px-4">{attachmentError}</p>
       ) : null}
-      <textarea
-        autoFocus={autoFocus}
-        className="max-h-32 min-h-12 w-full resize-none bg-transparent px-3 pt-3 pb-1 text-base leading-6 outline-none placeholder:text-muted-foreground/45 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 md:text-[15px] dark:placeholder:text-muted-foreground/60"
-        data-chat-composer-input
-        disabled={textareaDisabled}
-        id={composerId}
-        maxLength={maxLength}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        placeholder={placeholder}
-        ref={textareaRef}
-        rows={2}
-        value={value}
-      />
+      <div className="relative">
+        {highlightedCommand !== null && !textareaDisabled ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 max-h-32 overflow-hidden px-3 pt-3 pb-1 text-base leading-6 break-words whitespace-pre-wrap select-none sm:px-4 md:text-[15px]"
+            ref={highlightRef}
+          >
+            <span className="text-muted-foreground">{highlightedCommand}</span>
+            {value.slice(highlightedCommand.length)}
+          </div>
+        ) : null}
+        <textarea
+          autoFocus={autoFocus}
+          className={cn(
+            "max-h-32 min-h-12 w-full resize-none bg-transparent px-3 pt-3 pb-1 text-base leading-6 outline-none placeholder:text-muted-foreground/45 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 md:text-[15px] dark:placeholder:text-muted-foreground/60",
+            isCommandHighlighted ? "text-transparent caret-foreground" : undefined,
+          )}
+          data-chat-composer-input
+          disabled={textareaDisabled}
+          id={composerId}
+          maxLength={maxLength}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onScroll={syncHighlightScroll}
+          placeholder={placeholder}
+          ref={textareaRef}
+          rows={2}
+          value={value}
+        />
+      </div>
       <div className="flex min-h-9 items-center justify-between gap-2 px-3 pt-1 pb-2 sm:gap-3 sm:px-4">
         <div className="-ml-2 flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           <input
@@ -380,9 +423,9 @@ export function ChatComposer({
         <div className="flex shrink-0 items-center">
           {isBusy ? (
             <Button
-              aria-label="Response in progress"
-              className="size-6 cursor-default rounded-md bg-foreground/15 text-foreground/55 shadow-none hover:bg-foreground/15 disabled:cursor-default disabled:pointer-events-auto disabled:opacity-100"
-              disabled
+              aria-label="Stop response"
+              className="size-6 cursor-pointer rounded-md bg-foreground/15 text-foreground/70 shadow-none hover:bg-foreground/25"
+              onClick={onStop}
               size="icon-xs"
               type="button"
             >

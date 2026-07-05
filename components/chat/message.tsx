@@ -82,6 +82,7 @@ export function AgentMessage({
                 key={`${attachment.name}-${index}`}
                 mediaType={attachment.mediaType}
                 name={attachment.name}
+                url={attachment.url}
               />
             ))}
           </div>
@@ -304,13 +305,19 @@ function useStreamingText(text: string, isStreaming: boolean, streamKey: string)
 }
 
 function getInitialStreamingText(text: string, isStreaming: boolean, streamKey: string) {
+  // A completed (non-streaming) message renders in full immediately — don't
+  // replay a stale cached partial left over from navigating away mid-stream.
+  if (!isStreaming) {
+    return text;
+  }
+
   const cachedText = streamingTextCache.get(streamKey);
 
   if (cachedText && text.startsWith(cachedText)) {
     return cachedText;
   }
 
-  return isStreaming ? "" : text;
+  return "";
 }
 
 function rememberStreamingText(streamKey: string, text: string) {

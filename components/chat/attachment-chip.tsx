@@ -92,6 +92,7 @@ export function AttachmentChip({
   name,
   onRemove,
   removeLabel,
+  url,
 }: {
   readonly className?: string;
   readonly file?: File;
@@ -99,10 +100,14 @@ export function AttachmentChip({
   readonly name: string;
   readonly onRemove?: () => void;
   readonly removeLabel?: string;
+  readonly url?: string;
 }) {
   const meta = metaFor(name, mediaType);
   const isImage = mediaType.toLowerCase().startsWith("image/");
   const previewUrl = useImagePreview(file, isImage);
+  // Prefer a live File thumbnail (composer); fall back to a provided url (the
+  // sent bubble, in-session) so attached images show as images, not just icons.
+  const thumbnailSrc = previewUrl ?? (isImage ? url ?? null : null);
   const subtitle = file ? `${meta.label} · ${formatBytes(file.size)}` : meta.label;
 
   return (
@@ -115,13 +120,13 @@ export function AttachmentChip({
       <span
         className={cn(
           "flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg",
-          previewUrl ? "bg-muted" : meta.tile,
+          thumbnailSrc ? "bg-muted" : meta.tile,
         )}
       >
-        {previewUrl ? (
-          // Local thumbnail preview of the attached image.
+        {thumbnailSrc ? (
+          // Thumbnail preview of the attached image.
           // eslint-disable-next-line @next/next/no-img-element
-          <img alt="" className="size-full object-cover" src={previewUrl} />
+          <img alt="" className="size-full object-cover" src={thumbnailSrc} />
         ) : (
           <meta.Icon className="size-4" />
         )}

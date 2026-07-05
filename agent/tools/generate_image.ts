@@ -89,7 +89,9 @@ export default defineTool({
     return {
       ok: true,
       imageUrl: url,
-      markdown: `![${altText}](${url})`,
+      // Relative src so it resolves against the browser origin regardless of how
+      // getAppOrigin() is configured (avoids a wrong absolute host 404ing).
+      markdown: `![${altText}](/api/images/${id})`,
       message: sourceImage
         ? `Edited image ready: ${url}`
         : `Generated image ready: ${url}`,

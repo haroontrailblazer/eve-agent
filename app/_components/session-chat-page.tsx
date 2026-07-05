@@ -27,6 +27,8 @@ import {
   readPendingAttachments,
   writePendingAttachments,
 } from "@/lib/chat/attachments";
+import type { HandleMessageStreamEvent } from "eve/client";
+import { isChatTurnSettledEvent } from "@/lib/chat/events";
 import type { ActiveChat, SetupStatus } from "@/lib/chat/types";
 
 const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
@@ -166,6 +168,10 @@ export function SessionChatPage({
           return current;
         }
 
+        if (shouldKeepCurrentActiveChat(current, detail.activeChat, chatId)) {
+          return current;
+        }
+
         return detail.activeChat;
       });
       setPendingUserMessage((current) => {
@@ -229,7 +235,9 @@ export function SessionChatPage({
           return;
         }
 
-        setActiveChat(data.chat);
+        setActiveChat((current) =>
+          shouldKeepCurrentActiveChat(current, data.chat, chatId) ? current : data.chat,
+        );
         const nextPendingUserMessage = getRestorablePendingUserMessage(
           data.chat?.pendingUserMessage ?? null,
           settledPendingMessagesRef.current,
@@ -437,6 +445,39 @@ export function SessionChatPage({
       </div>
     </div>
   );
+}
+
+function hasOpenTurn(events: readonly HandleMessageStreamEvent[]): boolean {
+  let open = false;
+
+  for (const event of events) {
+    if (event.type === "turn.started") {
+      open = true;
+    } else if (isChatTurnSettledEvent(event)) {
+      open = false;
+    }
+  }
+
+  return open;
+}
+
+// Never replace the current chat with a STALER snapshot for the same chat: a
+// late /api/chats fetch or route-sync must not clobber the freshly-completed
+// turn (which would blank the answer and relight "Thinking…" until a refresh).
+function shouldKeepCurrentActiveChat(
+  current: ActiveChat | null,
+  next: ActiveChat | null,
+  chatId: string,
+): boolean {
+  if (!current || current.id !== chatId || !next || next.id !== chatId) {
+    return false;
+  }
+
+  if (next.events.length < current.events.length) {
+    return true;
+  }
+
+  return hasOpenTurn(next.events) && !hasOpenTurn(current.events);
 }
 
 function getRestorablePendingUserMessage(

@@ -731,6 +731,8 @@ export function AgentChatSession({
   const localEventsRef = useRef<HandleMessageStreamEvent[]>([]);
   const finalizeTimerRef = useRef<number | null>(null);
   const sentAttachmentsRef = useRef<Map<string, readonly AttachmentMeta[]>>(new Map());
+  const pendingSentAttachmentsRef = useRef<readonly AttachmentMeta[] | null>(null);
+  const lastSettledSessionIdRef = useRef<string | null>(null);
   const skillsRef = useRef<readonly SkillSummary[] | null>(null);
   const onSessionStartedRef = useRef<(session: SessionState) => Promise<void> | void>(
     () => {},
@@ -792,6 +794,11 @@ export function AgentChatSession({
           return;
         }
 
+        // Start the finalize settle countdown at turn completion, not after the
+        // network save — otherwise the composer stays disabled for the whole
+        // save round-trip after the answer is already visible.
+        finishFinalizingTurn();
+
         const snapshotEvents =
           streamEventsRef.current.length > 0
             ? mergeStreamEventLogs(
@@ -799,7 +806,12 @@ export function AgentChatSession({
                 streamEventsRef.current,
               )
             : preserveKnownInitialEvents(
-                snapshot.events,
+                // Namespace the raw snapshot events so their turnIds match the
+                // namespaced persisted events; otherwise the prefix match fails
+                // and the merge duplicates the turn.
+                snapshot.events.map((event) =>
+                  namespaceStreamEvent(event, persistedSessionRef.current?.state.sessionId),
+                ),
                 knownInitialEventsRef.current,
               );
         const events = mergeLocalEvents(snapshotEvents, localEventsRef.current);
@@ -816,6 +828,9 @@ export function AgentChatSession({
         });
         eventIndexRef.current = events.length;
         knownInitialEventsRef.current = events;
+        if (session.sessionId) {
+          lastSettledSessionIdRef.current = session.sessionId;
+        }
         streamEventsRef.current = [];
         setStreamEvents([]);
         touchChat({
@@ -834,8 +849,6 @@ export function AgentChatSession({
 
       } catch (error) {
         setClientError(error instanceof Error ? error.message : "Failed to save chat.");
-      } finally {
-        finishFinalizingTurn();
       }
     },
     [
@@ -981,7 +994,7 @@ export function AgentChatSession({
   const showThinking =
     !isWaitingForAuthorization &&
     agent.status !== "streaming" &&
-    (Boolean(pendingMessage || localPendingMessage) || isTurnOpen || isTurnBlocked);
+    (Boolean(pendingMessage || localPendingMessage) || isTurnOpen || isBusy);
   const thinkingPresence = useThinkingPresence(showThinking);
   const displayError = clientError ?? agent.error?.message ?? null;
   const toastError = displayError && dismissedError !== displayError ? displayError : null;
@@ -1046,7 +1059,10 @@ export function AgentChatSession({
       }
 
       if (attachments?.length) {
-        sentAttachmentsRef.current.set(message, toAttachmentMeta(attachments));
+        // Bound to the real user message (by id) once it materializes — see the
+        // binding effect. Keying by id avoids the empty-string collision that
+        // text-only keying caused for image-only sends.
+        pendingSentAttachmentsRef.current = toAttachmentMeta(attachments);
       }
 
       const lengthError = getChatMessageLengthError(message);
@@ -1362,6 +1378,10 @@ export function AgentChatSession({
     if (
       !viewer ||
       !activeChat?.session?.sessionId ||
+      // Don't phantom-resume a session this client already settled locally — a
+      // stale open-turn snapshot re-applied over the finished one would relight
+      // "Thinking…" and blank the answer until a refresh.
+      activeChat.session.sessionId === lastSettledSessionIdRef.current ||
       resumeStartedRef.current ||
       agent.status !== "ready"
     ) {
@@ -1448,6 +1468,9 @@ export function AgentChatSession({
         });
         eventIndexRef.current = allEvents.length;
         knownInitialEventsRef.current = allEvents;
+        if (session.state.sessionId) {
+          lastSettledSessionIdRef.current = session.state.sessionId;
+        }
         resumedEventsRef.current = [];
         setResumedEvents([]);
         touchChat({
@@ -1501,8 +1524,10 @@ export function AgentChatSession({
   }, [currentTitle]);
 
   useEffect(() => {
+    // Key the reset on the error sources (not the derived string) so a repeated
+    // identical message still re-opens the toast after being dismissed.
     setDismissedError(null);
-  }, [displayError]);
+  }, [agent.error, clientError]);
 
   // Keep the user's skill catalog on hand so a "/slug" command can be expanded
   // into the skill's prompt via client context when a message is sent.
@@ -1530,6 +1555,31 @@ export function AgentChatSession({
       clearLocalPendingUserMessage();
     }
   }, [clearLocalPendingUserMessage, displayMessages, localPendingUserMessage]);
+
+  // Bind a send's attachment descriptors to the real user message once it
+  // materializes in the reduced log, keyed by message id (not text).
+  useEffect(() => {
+    const pending = pendingSentAttachmentsRef.current;
+
+    if (!pending) {
+      return;
+    }
+
+    for (let index = displayMessages.length - 1; index >= 0; index -= 1) {
+      const candidate = displayMessages[index];
+
+      if (candidate?.role !== "user") {
+        continue;
+      }
+
+      if (!sentAttachmentsRef.current.has(candidate.id)) {
+        sentAttachmentsRef.current.set(candidate.id, pending);
+        pendingSentAttachmentsRef.current = null;
+      }
+
+      break;
+    }
+  }, [displayMessages]);
 
   useEffect(() => {
     onControllerChange(
@@ -1589,7 +1639,7 @@ export function AgentChatSession({
                   <AgentMessage
                     attachments={
                       message.role === "user"
-                        ? sentAttachmentsRef.current.get(getMessageText(message) ?? "")
+                        ? sentAttachmentsRef.current.get(message.id)
                         : undefined
                     }
                     canRespond={
@@ -1819,6 +1869,31 @@ function mergeLocalEvents(
   return merged;
 }
 
+function getStreamEventIdentity(event: HandleMessageStreamEvent): string {
+  const data =
+    "data" in event && event.data && typeof event.data === "object"
+      ? (event.data as Record<string, unknown>)
+      : null;
+  const turnId = data && typeof data.turnId === "string" ? data.turnId : "";
+  const sequence = data && typeof data.sequence === "number" ? String(data.sequence) : "";
+  const stepIndex = data && typeof data.stepIndex === "number" ? String(data.stepIndex) : "";
+
+  // Cheap structural identity for the high-frequency delta/step events so the
+  // per-render merge is O(n) instead of a recursive deep-equality O(n²) scan
+  // (which ran on every streamed token and degraded long chats).
+  if (turnId || sequence || stepIndex) {
+    return `${event.type}:${turnId}:${stepIndex}:${sequence}`;
+  }
+
+  // Boundary events (e.g. session.waiting) lack turn identity; fall back to a
+  // stable serialization so dedup still matches the old deep-equality behavior.
+  try {
+    return `${event.type}:${JSON.stringify(event)}`;
+  } catch {
+    return `${event.type}:?`;
+  }
+}
+
 function mergeStreamEventLogs(
   events: readonly HandleMessageStreamEvent[],
   streamedEvents: readonly HandleMessageStreamEvent[],
@@ -1827,14 +1902,18 @@ function mergeStreamEventLogs(
     return events as HandleMessageStreamEvent[];
   }
 
-  let merged: HandleMessageStreamEvent[] = [...events];
+  const seen = new Set(events.map(getStreamEventIdentity));
+  const merged: HandleMessageStreamEvent[] = [...events];
 
   for (const event of streamedEvents) {
-    const next = appendUniqueStreamEvent(merged, event);
+    const identity = getStreamEventIdentity(event);
 
-    if (next !== merged) {
-      merged = next;
+    if (seen.has(identity)) {
+      continue;
     }
+
+    seen.add(identity);
+    merged.push(event);
   }
 
   return merged;
@@ -2256,7 +2335,12 @@ function hasLatestUserMessage(
       continue;
     }
 
-    return getMessageText(message) === text.trim();
+    // Normalize both sides the same way. getMessageText already runs the reduced
+    // text through stripInlineAttachments (which also collapses blank lines), so
+    // the typed text must get the same treatment — otherwise a message with a
+    // double newline never matches and the optimistic pending message (and thus
+    // "Thinking…") is stranded until a refresh.
+    return getMessageText(message) === (stripInlineAttachments(text) || null);
   }
 
   return false;
