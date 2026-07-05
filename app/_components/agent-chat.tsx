@@ -46,6 +46,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HarpyLogo } from "./harpy-logo";
 import { HarpyWordmark } from "./harpy-wordmark";
+import { uploadImageAction } from "@/app/actions/images";
 import { listSkillsAction } from "@/app/actions/skills";
 import {
   buildMessageContent,
@@ -1160,8 +1161,41 @@ export function AgentChatSession({
           }
         }
 
+        // Host any image attachments so the agent can edit/enhance them by URL
+        // (a tool can't read uploaded bytes directly), and tell it where to find
+        // them so it never has to ask the user for a link.
+        let attachmentContext: string | null = null;
+        const imageAttachments =
+          attachments?.filter((attachment) => attachment.mediaType.startsWith("image/")) ?? [];
+
+        if (imageAttachments.length > 0) {
+          const urls = (
+            await Promise.all(
+              imageAttachments.map(async (image) => {
+                try {
+                  const result = await uploadImageAction({ dataUrl: image.data });
+                  return result.ok ? result.url ?? null : null;
+                } catch {
+                  return null;
+                }
+              }),
+            )
+          ).filter((url): url is string => Boolean(url));
+
+          if (urls.length > 0) {
+            attachmentContext = `The user attached ${urls.length} image${
+              urls.length === 1 ? "" : "s"
+            }, hosted at: ${urls.join(", ")}. To edit, enhance, upscale, restyle, or otherwise transform an attached image, call generate_image with sourceImageUrl set to that hosted URL — do not ask the user for a link.`;
+          }
+        }
+
         await agent.send({
-          clientContext: buildTurnClientContext(message, enabledConnections, skillsRef.current),
+          clientContext: [
+            buildTurnClientContext(message, enabledConnections, skillsRef.current),
+            attachmentContext,
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
           message: buildMessageContent(message, attachments),
         });
       } catch (error) {
