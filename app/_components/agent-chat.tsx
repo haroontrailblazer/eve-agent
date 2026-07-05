@@ -794,11 +794,6 @@ export function AgentChatSession({
           return;
         }
 
-        // Start the finalize settle countdown at turn completion, not after the
-        // network save — otherwise the composer stays disabled for the whole
-        // save round-trip after the answer is already visible.
-        finishFinalizingTurn();
-
         const snapshotEvents =
           streamEventsRef.current.length > 0
             ? mergeStreamEventLogs(
@@ -849,6 +844,11 @@ export function AgentChatSession({
 
       } catch (error) {
         setClientError(error instanceof Error ? error.message : "Failed to save chat.");
+      } finally {
+        // Keep the turn "finalizing" for the whole save round-trip so the
+        // composer stays disabled until the save lands — re-enabling early let a
+        // concurrent send race the save's continuation and lose events.
+        finishFinalizingTurn();
       }
     },
     [
@@ -1869,31 +1869,28 @@ function mergeLocalEvents(
   return merged;
 }
 
-function getStreamEventIdentity(event: HandleMessageStreamEvent): string {
+// Cheap COARSE key for bucketing base events. Events sharing a key (e.g. the
+// many message.appended deltas of one step, which all carry the same
+// turnId/stepIndex/sequence) land in the same bucket and are then compared with
+// full deep equality — so distinct deltas are never collapsed.
+function getStreamEventBucketKey(event: HandleMessageStreamEvent): string {
   const data =
     "data" in event && event.data && typeof event.data === "object"
       ? (event.data as Record<string, unknown>)
       : null;
   const turnId = data && typeof data.turnId === "string" ? data.turnId : "";
-  const sequence = data && typeof data.sequence === "number" ? String(data.sequence) : "";
   const stepIndex = data && typeof data.stepIndex === "number" ? String(data.stepIndex) : "";
+  const sequence = data && typeof data.sequence === "number" ? String(data.sequence) : "";
 
-  // Cheap structural identity for the high-frequency delta/step events so the
-  // per-render merge is O(n) instead of a recursive deep-equality O(n²) scan
-  // (which ran on every streamed token and degraded long chats).
-  if (turnId || sequence || stepIndex) {
-    return `${event.type}:${turnId}:${stepIndex}:${sequence}`;
-  }
-
-  // Boundary events (e.g. session.waiting) lack turn identity; fall back to a
-  // stable serialization so dedup still matches the old deep-equality behavior.
-  try {
-    return `${event.type}:${JSON.stringify(event)}`;
-  } catch {
-    return `${event.type}:?`;
-  }
+  return `${event.type}:${turnId}:${stepIndex}:${sequence}`;
 }
 
+// Merge persisted base events with live streamed events, dropping only genuine
+// base⇄stream duplicates. Streamed events are already internally de-duplicated
+// upstream (persistStreamEvent), and a live turn's events never collide with
+// prior settled turns, so bucketing by a cheap key keeps this ~O(n+m) while
+// preserving exact deep-equality semantics (no delta collapse, unlike a plain
+// coarse-key Set).
 function mergeStreamEventLogs(
   events: readonly HandleMessageStreamEvent[],
   streamedEvents: readonly HandleMessageStreamEvent[],
@@ -1902,17 +1899,28 @@ function mergeStreamEventLogs(
     return events as HandleMessageStreamEvent[];
   }
 
-  const seen = new Set(events.map(getStreamEventIdentity));
+  const baseBuckets = new Map<string, HandleMessageStreamEvent[]>();
+
+  for (const event of events) {
+    const key = getStreamEventBucketKey(event);
+    const bucket = baseBuckets.get(key);
+
+    if (bucket) {
+      bucket.push(event);
+    } else {
+      baseBuckets.set(key, [event]);
+    }
+  }
+
   const merged: HandleMessageStreamEvent[] = [...events];
 
   for (const event of streamedEvents) {
-    const identity = getStreamEventIdentity(event);
+    const bucket = baseBuckets.get(getStreamEventBucketKey(event));
 
-    if (seen.has(identity)) {
+    if (bucket && bucket.some((existing) => areSameStreamEvent(existing, event))) {
       continue;
     }
 
-    seen.add(identity);
     merged.push(event);
   }
 
