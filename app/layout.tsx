@@ -7,6 +7,7 @@ import { AuthDisplayPreHydrationHead } from "@/components/auth/auth-display";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getAppOrigin } from "@/lib/app-origin";
+import { themeInitScript } from "@/lib/theme";
 import "./globals.css";
 
 const title = "harpy";
@@ -51,24 +52,6 @@ export const metadata: Metadata = {
   },
 };
 
-const themeScript = `
-(() => {
-  try {
-    const theme = window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
-    const root = document.documentElement;
-    root.classList.remove("dark", "light");
-    root.classList.add(theme);
-    root.style.colorScheme = theme;
-  } catch {
-    const root = document.documentElement;
-    root.classList.add("dark");
-    root.style.colorScheme = "dark";
-  }
-})();
-`;
-
 export default function RootLayout({ children }: { readonly children: ReactNode }) {
   return (
     <html
@@ -77,7 +60,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} id="theme-init" />
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} id="theme-init" />
         <AuthDisplayPreHydrationHead />
       </head>
       <body className={`${geistSans.className} antialiased`}>
