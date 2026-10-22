@@ -16,28 +16,6 @@ function pickString(...values: unknown[]): string | null {
   return null;
 }
 
-// Kept for connection getToken(), which receives a principal object directly.
-export function resolvePrincipalId(principal: unknown): string | null {
-  const p = principal as Record<string, unknown> | null | undefined;
-
-  if (!p) {
-    return null;
-  }
-
-  const current = p.current as Record<string, unknown> | undefined;
-  const initiator = p.initiator as Record<string, unknown> | undefined;
-  const nested = p.principal as Record<string, unknown> | undefined;
-
-  return pickString(
-    p.principalId,
-    p.id,
-    current?.principalId,
-    initiator?.principalId,
-    nested?.principalId,
-    nested?.id,
-  );
-}
-
 function extractAuthContext(ctx: unknown): Record<string, unknown> | undefined {
   const auth = (
     ctx as { session?: { auth?: { current?: unknown; initiator?: unknown } } } | null | undefined
