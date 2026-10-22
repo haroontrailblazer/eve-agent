@@ -19,7 +19,6 @@ type ChatShellContextValue = {
   ) => void;
   readonly setupStatus: SetupStatus;
   readonly touchChat: (chat: ChatListItem) => void;
-  readonly updateChatTitle: (chatId: string, title: string) => void;
   readonly viewer: Viewer | null;
 };
 

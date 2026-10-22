@@ -48,7 +48,7 @@ export function ChatComposer({
   onChange,
   onStop,
   onSubmit,
-  placeholder = "Ask eve anything...",
+  placeholder = "Ask harpy anything...",
   value,
 }: {
   readonly autoFocus?: boolean;

@@ -124,12 +124,6 @@ export function AgentChatShell({
     });
   }, []);
 
-  const updateChatTitle = useCallback((chatId: string, title: string) => {
-    setHistory((items) =>
-      items.map((item) => (item.id === chatId ? { ...item, title } : item)),
-    );
-  }, []);
-
   const removeChat = useCallback((chatId: string) => {
     setHistory((items) => items.filter((item) => item.id !== chatId));
   }, []);
@@ -254,7 +248,6 @@ export function AgentChatShell({
       setConnectionEnabled,
       setupStatus: setupStatusState,
       touchChat,
-      updateChatTitle,
       viewer: viewerState,
     }),
     [
@@ -266,7 +259,6 @@ export function AgentChatShell({
       setConnectionEnabled,
       setupStatusState,
       touchChat,
-      updateChatTitle,
       viewerState,
     ],
   );

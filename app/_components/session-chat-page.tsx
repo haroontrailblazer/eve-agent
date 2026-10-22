@@ -1,40 +1,44 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createChatAction } from "@/app/actions/chat";
-import {
-  AgentChatSession,
-  ComposerFooterControls,
-  ErrorToast,
-  type AgentChatController,
-  type AgentChatControllerStatus,
-} from "@/app/_components/agent-chat";
 import {
   CHAT_ROUTE_SYNC_EVENT,
   type ChatRouteSyncDetail,
 } from "@/app/_components/agent-chat-events";
+import { ChatSession } from "@/app/_components/chat/chat-session";
+import { ComposerFooterControls } from "@/app/_components/chat/composer-footer-controls";
+import { ErrorToast } from "@/app/_components/chat/error-toast";
+import { LegacyChatView } from "@/app/_components/chat/legacy-chat-view";
+import { ThinkingMessage } from "@/app/_components/chat/thinking-message";
+import { createLocalUserMessage } from "@/app/_components/chat/use-harpy-chat";
 import { useChatShell } from "@/app/_components/chat-shell-context";
 import { ChatComposer } from "@/components/chat/composer";
+import { ChatConversation, ChatConversationContent } from "@/components/chat/conversation";
+import { AgentMessage } from "@/components/chat/message";
+import {
+  readPendingAttachments,
+  writePendingAttachments,
+  type Attachment,
+} from "@/lib/chat/attachments";
+import { shouldAutoSendPending } from "@/lib/chat/auto-send";
+import { hasOpenTurn } from "@/lib/chat/events";
 import {
   clearPendingChatMessage,
   isProvisionalChatId,
   readPendingChatMessage,
   writePendingChatMessage,
 } from "@/lib/chat/provisional-chat";
-import {
-  filesToAttachments,
-  readPendingAttachments,
-  writePendingAttachments,
-} from "@/lib/chat/attachments";
-import type { HandleMessageStreamEvent } from "eve/client";
-import { isChatTurnSettledEvent } from "@/lib/chat/events";
+import { getSetupDisabledReason } from "@/lib/chat/setup-reason";
 import type { ActiveChat, SetupStatus } from "@/lib/chat/types";
 
-const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
-  isBusy: false,
-  isDisabled: false,
-  isEmpty: true,
+type LoadedChat = {
+  readonly autoSend: {
+    readonly attachments: readonly Attachment[];
+    readonly message: string;
+  } | null;
+  readonly chat: ActiveChat;
 };
 
 export function SessionChatPage({
@@ -46,35 +50,24 @@ export function SessionChatPage({
 }) {
   const { setActiveChatId, setupStatus, touchChat, viewer } = useChatShell();
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(null);
-  const [draft, setDraft] = useState("");
-  const [controllerReady, setControllerReady] = useState(false);
-  const [controllerStatus, setControllerStatus] = useState(IDLE_CONTROLLER_STATUS);
+  const [loadedChat, setLoadedChat] = useState<LoadedChat | null>(null);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
   const [dismissedError, setDismissedError] = useState<string | null>(null);
-  const controllerRef = useRef<AgentChatController | null>(null);
   const currentChatIdRef = useRef(chatId);
-  const pendingConsumedRef = useRef(false);
+  const loadedChatIdRef = useRef<string | null>(null);
   const provisionalCreateStartedRef = useRef(new Set<string>());
-  const settledPendingMessagesRef = useRef(new Set<string>());
   const isProvisionalChat = isProvisionalChatId(chatId);
   const router = useRouter();
   const toastError = clientError && dismissedError !== clientError ? clientError : null;
-  const isLoadingChat = !activeChat;
 
   useEffect(() => {
     currentChatIdRef.current = chatId;
   }, [chatId]);
 
   useEffect(() => {
-    controllerRef.current = null;
-    setControllerReady(false);
-    setControllerStatus(IDLE_CONTROLLER_STATUS);
     setActiveChat(null);
-    setDraft("");
     setPendingUserMessage(null);
-    pendingConsumedRef.current = false;
-    settledPendingMessagesRef.current = new Set();
   }, [chatId]);
 
   useEffect(() => {
@@ -174,16 +167,6 @@ export function SessionChatPage({
 
         return detail.activeChat;
       });
-      setPendingUserMessage((current) => {
-        if (detail.activeChat) {
-          return getRestorablePendingUserMessage(
-            detail.activeChat.pendingUserMessage,
-            settledPendingMessagesRef.current,
-          );
-        }
-
-        return current;
-      });
     };
     const target = window as Window & {
       __eveChatRouteSync?: ChatRouteSyncDetail;
@@ -238,16 +221,6 @@ export function SessionChatPage({
         setActiveChat((current) =>
           shouldKeepCurrentActiveChat(current, data.chat, chatId) ? current : data.chat,
         );
-        const nextPendingUserMessage = getRestorablePendingUserMessage(
-          data.chat?.pendingUserMessage ?? null,
-          settledPendingMessagesRef.current,
-        );
-
-        setPendingUserMessage(nextPendingUserMessage);
-
-        if (!nextPendingUserMessage) {
-          clearPendingChatMessage(chatId);
-        }
         setClientError(null);
       } catch (error) {
         if (!cancelled && !abortController.signal.aborted) {
@@ -264,146 +237,31 @@ export function SessionChatPage({
     };
   }, [chatId, isProvisionalChat, setupStatus.appReady, viewer]);
 
+  // Settles once per chat whether it sends its pending first message. Reading
+  // the pending attachments removes them from storage, so this runs in an
+  // effect: Strict Mode renders twice, and the second read would find nothing.
   useEffect(() => {
-    if (!viewer) {
+    if (!activeChat || loadedChatIdRef.current === activeChat.id) {
       return;
     }
 
-    const restoredDraft = window.sessionStorage.getItem("eve-chat-draft");
+    loadedChatIdRef.current = activeChat.id;
 
-    if (restoredDraft) {
-      setDraft(restoredDraft);
-      window.sessionStorage.removeItem("eve-chat-draft");
-    }
-  }, [viewer]);
+    const message = activeChat.pendingUserMessage;
+    const autoSend =
+      message !== null && shouldAutoSendPending(activeChat)
+        ? { attachments: readPendingAttachments(activeChat.id), message }
+        : null;
 
-  useEffect(() => {
-    if (
-      pendingConsumedRef.current ||
-      isLoadingChat ||
-      !controllerReady ||
-      controllerStatus.isBusy ||
-      controllerStatus.isDisabled
-    ) {
-      return;
-    }
-
-    if (!pendingUserMessage) {
-      return;
-    }
-
-    const controller = controllerRef.current;
-
-    if (!controller) {
-      return;
-    }
-
-    pendingConsumedRef.current = true;
-
-    const pendingAttachments = readPendingAttachments(chatId);
-
-    void controller.sendMessage(
-      pendingUserMessage,
-      {
-        clearDraft: () => setDraft(""),
-        restoreDraft: (value) => {
-          setPendingUserMessage(null);
-          setDraft(value);
-        },
-      },
-      pendingAttachments.length > 0 ? pendingAttachments : undefined,
-    );
-  }, [
-    chatId,
-    controllerReady,
-    controllerStatus.isBusy,
-    controllerStatus.isDisabled,
-    isLoadingChat,
-    pendingUserMessage,
-  ]);
+    clearPendingChatMessage(activeChat.id);
+    setLoadedChat({ autoSend, chat: activeChat });
+  }, [activeChat]);
 
   useEffect(() => {
     setDismissedError(null);
   }, [clientError]);
 
-  const handleControllerChange = useCallback(
-    (controller: AgentChatController | null, status: AgentChatControllerStatus) => {
-      controllerRef.current = controller;
-      setControllerReady(Boolean(controller));
-      setControllerStatus((current) =>
-        current.isBusy === status.isBusy &&
-        current.isDisabled === status.isDisabled &&
-        current.isEmpty === status.isEmpty
-          ? current
-          : status,
-      );
-    },
-    [],
-  );
-
-  const handleComposerSubmit = useCallback(async (text: string, files: File[]) => {
-    if (isLoadingChat) {
-      setClientError("Chat history is still loading.");
-      return;
-    }
-
-    const controller = controllerRef.current;
-
-    if (!controller) {
-      setClientError("Chat is still getting ready.");
-      return;
-    }
-
-    const attachments = files.length > 0 ? await filesToAttachments(files) : undefined;
-
-    await controller.sendMessage(
-      text,
-      {
-        clearDraft: () => setDraft(""),
-        restoreDraft: setDraft,
-      },
-      attachments,
-    );
-  }, [isLoadingChat]);
-
-  const handleComposerStop = useCallback(() => {
-    controllerRef.current?.stop();
-  }, []);
-
-  const handlePendingUserMessageSettled = useCallback((message?: string) => {
-    clearPendingChatMessage(chatId);
-
-    if (message) {
-      settledPendingMessagesRef.current.add(message);
-    }
-
-    setPendingUserMessage((current) =>
-      !message || current === message ? null : current,
-    );
-  }, [chatId]);
-
-  const handleActiveChatUpdated = useCallback((nextActiveChat: ActiveChat) => {
-    setActiveChat(nextActiveChat);
-    setPendingUserMessage(
-      getRestorablePendingUserMessage(
-        nextActiveChat.pendingUserMessage,
-        settledPendingMessagesRef.current,
-      ),
-    );
-  }, []);
-
-  const composerDisabled =
-    !setupStatus.appReady ||
-    isLoadingChat ||
-    Boolean(pendingUserMessage) ||
-    controllerStatus.isDisabled;
-  const sessionInstanceKey = activeChat ? `${chatId}:loaded` : `${chatId}:loading`;
-  const composerDisabledReason = getSessionComposerDisabledReason({
-    controllerStatus,
-    isLoadingChat,
-    pendingUserMessage,
-    setupStatus,
-  });
+  const loaded = loadedChat?.chat.id === chatId ? loadedChat : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -414,31 +272,17 @@ export function SessionChatPage({
         />
       ) : null}
 
-      <AgentChatSession
-        activeChat={activeChat}
-        chatId={chatId}
-        key={sessionInstanceKey}
-        onActiveChatUpdated={handleActiveChatUpdated}
-        onPendingUserMessageSettled={handlePendingUserMessageSettled}
-        onControllerChange={handleControllerChange}
-        pendingUserMessage={pendingUserMessage}
-      />
-
-      <div className="shrink-0 pb-4 sm:pb-6">
-        <div className="mx-auto w-full max-w-2xl px-4 sm:px-6">
-          <ChatComposer
-            disabled={composerDisabled}
-            disabledReason={composerDisabledReason}
-            footerStart={<ComposerFooterControls setupStatus={setupStatus} />}
-            isBusy={controllerStatus.isBusy}
-            onChange={setDraft}
-            onStop={handleComposerStop}
-            onSubmit={handleComposerSubmit}
-            placeholder="Ask anything..."
-            value={draft}
-          />
-        </div>
-      </div>
+      {loaded === null ? (
+        <ChatLoadingView
+          chatId={chatId}
+          pendingUserMessage={pendingUserMessage}
+          setupStatus={setupStatus}
+        />
+      ) : loaded.chat.legacy ? (
+        <LegacyChatView chat={loaded.chat} />
+      ) : (
+        <ChatSession autoSend={loaded.autoSend} chat={loaded.chat} key={loaded.chat.id} />
+      )}
 
       <div className="hidden" aria-hidden>
         {children}
@@ -447,23 +291,66 @@ export function SessionChatPage({
   );
 }
 
-function hasOpenTurn(events: readonly HandleMessageStreamEvent[]): boolean {
-  let open = false;
+const isInputOpen = () => false;
+const noop = () => {};
 
-  for (const event of events) {
-    if (event.type === "turn.started") {
-      open = true;
-    } else if (isChatTurnSettledEvent(event)) {
-      open = false;
-    }
-  }
+// Shown until the chat loads. A message handed over from the home page shows
+// at once, with "Thinking...", so the page does not jump when the chat loads.
+function ChatLoadingView({
+  chatId,
+  pendingUserMessage,
+  setupStatus,
+}: {
+  readonly chatId: string;
+  readonly pendingUserMessage: string | null;
+  readonly setupStatus: SetupStatus;
+}) {
+  const disabledReason =
+    getSetupDisabledReason(setupStatus) ??
+    (pendingUserMessage ? "Sending message." : "Chat history is still loading.");
 
-  return open;
+  return (
+    <>
+      <div className="h-12 shrink-0" />
+      {pendingUserMessage ? (
+        <ChatConversation>
+          <ChatConversationContent>
+            <AgentMessage
+              canRespond={false}
+              isCancelling={false}
+              isInputOpen={isInputOpen}
+              isStreaming={false}
+              message={createLocalUserMessage(`${chatId}:pending`, pendingUserMessage)}
+              onCancelTurn={noop}
+              onInputResponses={noop}
+            />
+            <ThinkingMessage isVisible />
+          </ChatConversationContent>
+        </ChatConversation>
+      ) : (
+        <div className="min-h-0 flex-1" />
+      )}
+
+      <div className="shrink-0 pb-4 sm:pb-6">
+        <div className="mx-auto w-full max-w-2xl px-4 sm:px-6">
+          <ChatComposer
+            disabled
+            disabledReason={disabledReason}
+            footerStart={<ComposerFooterControls setupStatus={setupStatus} />}
+            onChange={noop}
+            onStop={noop}
+            onSubmit={noop}
+            value=""
+          />
+        </div>
+      </div>
+    </>
+  );
 }
 
 // Never replace the current chat with a STALER snapshot for the same chat: a
 // late /api/chats fetch or route-sync must not clobber the freshly-completed
-// turn (which would blank the answer and relight "Thinking…" until a refresh).
+// turn (which would blank the answer and relight "Thinking..." until a refresh).
 function shouldKeepCurrentActiveChat(
   current: ActiveChat | null,
   next: ActiveChat | null,
@@ -478,69 +365,4 @@ function shouldKeepCurrentActiveChat(
   }
 
   return hasOpenTurn(next.events) && !hasOpenTurn(current.events);
-}
-
-function getRestorablePendingUserMessage(
-  pendingUserMessage: string | null | undefined,
-  settledMessages: ReadonlySet<string>,
-) {
-  if (!pendingUserMessage || settledMessages.has(pendingUserMessage)) {
-    return null;
-  }
-
-  return pendingUserMessage;
-}
-
-function getSessionComposerDisabledReason({
-  controllerStatus,
-  isLoadingChat,
-  pendingUserMessage,
-  setupStatus,
-}: {
-  readonly controllerStatus: AgentChatControllerStatus;
-  readonly isLoadingChat: boolean;
-  readonly pendingUserMessage: string | null;
-  readonly setupStatus: SetupStatus;
-}) {
-  if (!setupStatus.databaseConfigured) {
-    return "Connect Neon Postgres before chatting.";
-  }
-
-  if (!setupStatus.databaseSchemaReady) {
-    return "Run database migrations: vercel env run -e production -- pnpm db:migrate.";
-  }
-
-  if (controllerStatus.disabledReason) {
-    return controllerStatus.disabledReason;
-  }
-
-  if (pendingUserMessage) {
-    return "Sending message.";
-  }
-
-  if (isLoadingChat) {
-    return "Chat history is still loading.";
-  }
-
-  if (!setupStatus.authReady) {
-    const missing = setupStatus.missing.length
-      ? ` Missing: ${setupStatus.missing.join(", ")}.`
-      : "";
-
-    return `Finish auth setup before chatting.${missing}`;
-  }
-
-  if (!setupStatus.rateLimitReady) {
-    return "Provision Upstash Redis before chatting.";
-  }
-
-  if (controllerStatus.isDisabled) {
-    return "Chat is unavailable.";
-  }
-
-  if (controllerStatus.isBusy) {
-    return "eve is responding.";
-  }
-
-  return undefined;
 }

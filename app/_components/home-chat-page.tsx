@@ -2,11 +2,8 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ComposerFooterControls,
-  ErrorToast,
-  type AgentChatControllerStatus,
-} from "@/app/_components/agent-chat";
+import { ComposerFooterControls } from "@/app/_components/chat/composer-footer-controls";
+import { ErrorToast } from "@/app/_components/chat/error-toast";
 import { useChatShell } from "@/app/_components/chat-shell-context";
 import { HarpyLogo } from "@/app/_components/harpy-logo";
 import { HarpyWordmark } from "@/app/_components/harpy-wordmark";
@@ -18,12 +15,6 @@ import {
 } from "@/lib/chat/provisional-chat";
 import { filesToAttachments, writePendingAttachments } from "@/lib/chat/attachments";
 import type { SetupStatus } from "@/lib/chat/types";
-
-const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
-  isBusy: false,
-  isDisabled: false,
-  isEmpty: true,
-};
 
 export function HomeChatPage() {
   const {
@@ -130,7 +121,7 @@ export function HomeChatPage() {
           );
           if (!stored) {
             setClientError(
-              "Those files are too large to carry from the start page — open the chat and attach them there.",
+              "Those files are too large to carry from the start page. Open the chat and attach them there.",
             );
           }
         } catch {
@@ -183,12 +174,10 @@ export function HomeChatPage() {
               disabled={composerDisabled}
               disabledReason={composerDisabledReason}
               footerStart={<ComposerFooterControls setupStatus={setupStatus} />}
-              isBusy={IDLE_CONTROLLER_STATUS.isBusy}
               isPreparing={submitting}
               onChange={setDraft}
               onStop={() => {}}
               onSubmit={handleSubmit}
-              placeholder="Ask anything..."
               value={draft}
             />
           </div>
