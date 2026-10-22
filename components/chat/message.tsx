@@ -1,6 +1,11 @@
 "use client";
 
-import type { EveDynamicToolPart, EveMessage, EveMessagePart } from "eve/react";
+import type {
+  EveAuthorizationPart,
+  EveDynamicToolPart,
+  EveMessage,
+  EveMessagePart,
+} from "eve/react";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -14,7 +19,9 @@ import {
   stripInlineAttachments,
   type AttachmentMeta,
 } from "@/lib/chat/attachments";
+import { authorizationKey } from "@/lib/chat/authorization";
 import { AttachmentChip } from "@/components/chat/attachment-chip";
+import { AuthorizationCard } from "@/components/chat/authorization-card";
 import { Markdown } from "@/components/chat/markdown";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -34,14 +41,20 @@ export type AgentInputResponse = {
 export function AgentMessage({
   attachments,
   canRespond,
+  isCancelling,
+  isInputOpen,
   isStreaming,
   message,
+  onCancelTurn,
   onInputResponses,
 }: {
   readonly attachments?: readonly AttachmentMeta[];
   readonly canRespond: boolean;
+  readonly isCancelling: boolean;
+  readonly isInputOpen: (requestId: string) => boolean;
   readonly isStreaming: boolean;
   readonly message: EveMessage;
+  readonly onCancelTurn: () => void;
   readonly onInputResponses: (responses: readonly AgentInputResponse[]) => void | Promise<void>;
 }) {
   const lastTextIndex = message.parts.reduce(
@@ -49,15 +62,18 @@ export function AgentMessage({
     -1,
   );
   const isUser = message.role === "user";
-  // Prefer the metadata tracked when the file was sent (has the real media
-  // type); fall back to parsing the `[file: …]` placeholders out of the message
-  // text so chips still render after a reload, when the in-memory map is gone.
+  // File parts carry the attachments themselves and render in place. Without
+  // them (older chats), prefer the metadata tracked when the file was sent (has
+  // the real media type); fall back to parsing the `[file: …]` placeholders out
+  // of the message text so chips still render after a reload, when the
+  // in-memory map is gone.
+  const hasFileParts = message.parts.some((part) => part.type === "file");
   const userAttachments =
-    isUser && attachments && attachments.length > 0
-      ? attachments
-      : isUser
-        ? parseInlineAttachments(userMessageText(message))
-        : [];
+    !isUser || hasFileParts
+      ? []
+      : attachments && attachments.length > 0
+        ? attachments
+        : parseInlineAttachments(userMessageText(message));
 
   return (
     <article
@@ -89,9 +105,12 @@ export function AgentMessage({
         ) : null}
         <AgentMessageParts
           canRespond={canRespond}
+          isCancelling={isCancelling}
+          isInputOpen={isInputOpen}
           isUser={isUser}
           lastTextIndex={lastTextIndex}
           messageId={message.id}
+          onCancelTurn={onCancelTurn}
           onInputResponses={onInputResponses}
           parts={message.parts}
           showCaret={isStreaming && message.role === "assistant"}
@@ -101,25 +120,34 @@ export function AgentMessage({
   );
 }
 
+type FilePart = Extract<EveMessagePart, { type: "file" }>;
+
 function AgentMessageParts({
   canRespond,
+  isCancelling,
+  isInputOpen,
   isUser,
   lastTextIndex,
   messageId,
+  onCancelTurn,
   onInputResponses,
   parts,
   showCaret,
 }: {
   readonly canRespond: boolean;
+  readonly isCancelling: boolean;
+  readonly isInputOpen: (requestId: string) => boolean;
   readonly isUser: boolean;
   readonly lastTextIndex: number;
   readonly messageId: string;
+  readonly onCancelTurn: () => void;
   readonly onInputResponses: (responses: readonly AgentInputResponse[]) => void | Promise<void>;
   readonly parts: readonly EveMessagePart[];
   readonly showCaret: boolean;
 }) {
   const elements: ReactNode[] = [];
   let pendingTools: EveDynamicToolPart[] = [];
+  let pendingFiles: FilePart[] = [];
 
   const flushTools = (isSettled: boolean) => {
     if (pendingTools.length === 0) {
@@ -131,6 +159,7 @@ function AgentMessageParts({
     elements.push(
       <ToolGroup
         canRespond={canRespond}
+        isInputOpen={isInputOpen}
         isSettled={isSettled}
         key={`tools:${partsForGroup.map((part) => part.toolCallId).join(":")}`}
         onInputResponses={onInputResponses}
@@ -140,21 +169,52 @@ function AgentMessageParts({
     pendingTools = [];
   };
 
+  // Consecutive file parts share one wrapping row of attachment chips.
+  const flushFiles = () => {
+    if (pendingFiles.length === 0) {
+      return;
+    }
+
+    const filesForGroup = pendingFiles;
+
+    elements.push(
+      <div className="mb-2 flex flex-wrap gap-2" key={`files:${elements.length}`}>
+        {filesForGroup.map((file, index) => (
+          <AttachmentChip
+            key={`${file.filename ?? file.mediaType}-${index}`}
+            mediaType={file.mediaType}
+            name={file.filename ?? file.mediaType}
+            url={file.url}
+          />
+        ))}
+      </div>,
+    );
+    pendingFiles = [];
+  };
+
   parts.forEach((part, index) => {
     if (part.type === "dynamic-tool") {
+      flushFiles();
       pendingTools.push(part);
       return;
     }
 
+    if (part.type === "file") {
+      flushTools(true);
+      pendingFiles.push(part);
+      return;
+    }
+
     flushTools(true);
+    flushFiles();
     const key = partKey(part, index);
 
     elements.push(
       <AgentMessagePart
-        canRespond={canRespond}
+        isCancelling={isCancelling}
         isUser={isUser}
         key={key}
-        onInputResponses={onInputResponses}
+        onCancelTurn={onCancelTurn}
         part={part}
         showCaret={showCaret && index === lastTextIndex}
         streamKey={`${messageId}:${key}`}
@@ -163,21 +223,22 @@ function AgentMessageParts({
   });
 
   flushTools(!showCaret);
+  flushFiles();
 
   return elements;
 }
 
 function AgentMessagePart({
-  canRespond,
+  isCancelling,
   isUser,
-  onInputResponses,
+  onCancelTurn,
   part,
   showCaret,
   streamKey,
 }: {
-  readonly canRespond: boolean;
+  readonly isCancelling: boolean;
   readonly isUser: boolean;
-  readonly onInputResponses: (responses: readonly AgentInputResponse[]) => void | Promise<void>;
+  readonly onCancelTurn: () => void;
   readonly part: EveMessagePart;
   readonly showCaret: boolean;
   readonly streamKey: string;
@@ -193,8 +254,45 @@ function AgentMessagePart({
       );
     case "reasoning":
       return <ReasoningPart isStreaming={part.state === "streaming"} text={part.text} />;
+    case "authorization":
+      return (
+        <AuthorizationPart isCancelling={isCancelling} onCancelTurn={onCancelTurn} part={part} />
+      );
     case "dynamic-tool":
+    case "file":
+      // Grouped and rendered by AgentMessageParts.
       return null;
+  }
+}
+
+function AuthorizationPart({
+  isCancelling,
+  onCancelTurn,
+  part,
+}: {
+  readonly isCancelling: boolean;
+  readonly onCancelTurn: () => void;
+  readonly part: EveAuthorizationPart;
+}) {
+  if (part.state === "required") {
+    return <AuthorizationCard isSkipping={isCancelling} onSkip={onCancelTurn} part={part} />;
+  }
+
+  return (
+    <p className="my-2 px-3 text-sm leading-6 text-muted-foreground">
+      {authorizationOutcomeLine(part)}
+    </p>
+  );
+}
+
+function authorizationOutcomeLine(part: Extract<EveAuthorizationPart, { state: "completed" }>) {
+  switch (part.outcome) {
+    case "authorized":
+      return `${part.displayName} connected.`;
+    case "declined":
+      return `${part.displayName} skipped.`;
+    default:
+      return `${part.displayName} sign-in didn't finish.`;
   }
 }
 
@@ -391,11 +489,13 @@ function ReasoningPart({
 
 function ToolGroup({
   canRespond,
+  isInputOpen,
   isSettled,
   onInputResponses,
   parts,
 }: {
   readonly canRespond: boolean;
+  readonly isInputOpen: (requestId: string) => boolean;
   readonly isSettled: boolean;
   readonly onInputResponses: (responses: readonly AgentInputResponse[]) => void | Promise<void>;
   readonly parts: readonly EveDynamicToolPart[];
@@ -443,6 +543,7 @@ function ToolGroup({
           {parts.length === 1 ? (
             <ToolDetails
               canRespond={canRespond}
+              isInputOpen={isInputOpen}
               onInputResponses={onInputResponses}
               part={parts[0]!}
             />
@@ -450,6 +551,7 @@ function ToolGroup({
             parts.map((part) => (
               <ToolCallItem
                 canRespond={canRespond}
+                isInputOpen={isInputOpen}
                 isSettled={isSettled}
                 key={part.toolCallId}
                 onInputResponses={onInputResponses}
@@ -465,11 +567,13 @@ function ToolGroup({
 
 function ToolCallItem({
   canRespond,
+  isInputOpen,
   isSettled,
   onInputResponses,
   part,
 }: {
   readonly canRespond: boolean;
+  readonly isInputOpen: (requestId: string) => boolean;
   readonly isSettled: boolean;
   readonly onInputResponses: (responses: readonly AgentInputResponse[]) => void | Promise<void>;
   readonly part: EveDynamicToolPart;
@@ -514,6 +618,7 @@ function ToolCallItem({
       <CollapsibleContent className="mt-1 ml-5">
         <ToolDetails
           canRespond={canRespond}
+          isInputOpen={isInputOpen}
           onInputResponses={onInputResponses}
           part={part}
         />
@@ -524,10 +629,12 @@ function ToolCallItem({
 
 function ToolDetails({
   canRespond,
+  isInputOpen,
   onInputResponses,
   part,
 }: {
   readonly canRespond: boolean;
+  readonly isInputOpen: (requestId: string) => boolean;
   readonly onInputResponses: (responses: readonly AgentInputResponse[]) => void | Promise<void>;
   readonly part: EveDynamicToolPart;
 }) {
@@ -537,6 +644,7 @@ function ToolDetails({
     <div className="space-y-1.5">
       <InputRequestActions
         canRespond={canRespond}
+        isInputOpen={isInputOpen}
         onInputResponses={onInputResponses}
         part={part}
       />
@@ -616,10 +724,12 @@ function ToolPayload({
 
 function InputRequestActions({
   canRespond,
+  isInputOpen,
   onInputResponses,
   part,
 }: {
   readonly canRespond: boolean;
+  readonly isInputOpen: (requestId: string) => boolean;
   readonly onInputResponses: (responses: readonly AgentInputResponse[]) => void | Promise<void>;
   readonly part: EveDynamicToolPart;
 }) {
@@ -646,6 +756,10 @@ function InputRequestActions({
     );
   }
 
+  // The request can be answered only while eve still has it open, so a stale
+  // prompt (answered elsewhere, or its turn ended) stays inert.
+  const canAnswer = canRespond && isInputOpen(inputRequest.requestId);
+
   const sendTextResponse = () => {
     const text = freeformText.trim();
     if (!text) {
@@ -662,7 +776,7 @@ function InputRequestActions({
         <div className="flex flex-wrap gap-2">
           {inputRequest.options.map((option) => (
             <Button
-              disabled={!canRespond}
+              disabled={!canAnswer}
               key={option.id}
               onClick={() => {
                 void onInputResponses([
@@ -684,7 +798,7 @@ function InputRequestActions({
       {inputRequest.allowFreeform || inputRequest.display === "text" ? (
         <div className="flex gap-2">
           <Input
-            disabled={!canRespond}
+            disabled={!canAnswer}
             onChange={(event) => setFreeformText(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -696,7 +810,7 @@ function InputRequestActions({
             value={freeformText}
           />
           <Button
-            disabled={!canRespond || freeformText.trim().length === 0}
+            disabled={!canAnswer || freeformText.trim().length === 0}
             onClick={sendTextResponse}
             type="button"
           >
@@ -715,7 +829,7 @@ function needsInputResponse(part: EveDynamicToolPart) {
 }
 
 function hasToolDetails(part: EveDynamicToolPart) {
-  if (isConnectionSearchTool(part)) {
+  if (isCatalogTool(resolveToolName(part))) {
     return false;
   }
 
@@ -727,10 +841,10 @@ function hasToolDetails(part: EveDynamicToolPart) {
   return hasInput || hasOutput || hasError || Boolean(part.toolMetadata?.eve?.inputRequest);
 }
 
-function isConnectionSearchTool(part: EveDynamicToolPart) {
-  const normalized = normalizeToolName(resolveToolName(part));
-
-  return normalized.includes("connection") && normalized.includes("search");
+// eve's catalog tools: how the model finds and calls tools that are not in its
+// tool list. Their raw input is not useful to show.
+function isCatalogTool(name: string) {
+  return name === "eve__search" || name === "eve__tool";
 }
 
 function getToolStatus(part: EveDynamicToolPart): ToolStatus {
@@ -834,6 +948,13 @@ function toolCategory(name: string) {
 }
 
 function describeToolAction(part: EveDynamicToolPart, status = getToolStatus(part)) {
+  // eve words each call for people. Parts saved by older versions have no label.
+  const eveLabel = part.toolMetadata?.eve?.label?.trim();
+
+  if (eveLabel) {
+    return eveLabel;
+  }
+
   const name = resolveToolName(part);
   const normalized = normalizeToolName(name);
   const input = asRecord(part.input);
@@ -841,21 +962,11 @@ function describeToolAction(part: EveDynamicToolPart, status = getToolStatus(par
   const path = readString(input, ["path", "filePath", "filename"]);
   const command = readString(input, ["command", "cmd"]);
   const url = readString(input, ["url", "href"]);
-  const connection = readString(input, ["connection", "connectionName", "connector", "source"]);
 
-  if (normalized.includes("connection") && normalized.includes("search")) {
+  if (isCatalogTool(name)) {
     const verb = status === "running" ? "Searching" : "Searched";
-    const connectionName = resolveConnectionName(name, connection);
 
-    if (connectionName) {
-      return `${verb} ${formatDisplayName(connectionName)}`;
-    }
-
-    if (query && query !== "*") {
-      return `${verb} ${truncateInline(query, 72)}`;
-    }
-
-    return `${verb} connections`;
+    return query && query !== "*" ? `${verb} ${truncateInline(query, 72)}` : `${verb} tools`;
   }
 
   if (normalized.includes("search") || normalized.includes("grep")) {
@@ -896,7 +1007,6 @@ function resolveToolName(part: EveDynamicToolPart) {
 
 function formatToolName(name: string) {
   return normalizeToolName(name)
-    .replace(/^connection search$/, "connection search")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -907,41 +1017,6 @@ function normalizeToolName(name: string) {
     .replace(/[_-]/g, " ")
     .trim()
     .toLowerCase();
-}
-
-function formatDisplayName(value: string) {
-  const cleaned = value
-    .replace(/^mcp\./, "")
-    .replace(/\.com(?:\/.*)?$/, "")
-    .replace(/[_-]/g, " ");
-
-  return cleaned
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function resolveConnectionName(toolName: string, inputConnection?: string | null) {
-  if (inputConnection && inputConnection !== "*") {
-    return inputConnection;
-  }
-
-  const tokens = normalizeToolName(toolName).split(/\s+/).filter(Boolean);
-
-  if (tokens[0] !== "connection" || tokens.length <= 2) {
-    return null;
-  }
-
-  const connectionTokens = tokens
-    .slice(1)
-    .filter((token) => token !== "search" && token !== "tool" && token !== "tools");
-
-  if (connectionTokens.length === 0) {
-    return null;
-  }
-
-  return [...new Set(connectionTokens)].join(" ");
 }
 
 function shortenPath(filepath: string) {
@@ -1010,6 +1085,8 @@ function truncateText(text: string, maxLength: number) {
 
 function partKey(part: EveMessagePart, index: number): string {
   switch (part.type) {
+    case "authorization":
+      return `authorization:${authorizationKey(part)}`;
     case "dynamic-tool":
       return part.toolCallId;
     default:
