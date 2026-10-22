@@ -8,6 +8,7 @@ const ready: SetupStatus = {
   databaseConfigured: true,
   databaseReady: true,
   databaseSchemaReady: true,
+  mediaReady: true,
   missing: [],
   rateLimitReady: true,
 };

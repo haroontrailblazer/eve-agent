@@ -33,6 +33,9 @@ export type SetupStatus = {
   readonly databaseConfigured: boolean;
   readonly databaseReady: boolean;
   readonly databaseSchemaReady: boolean;
+  // Vercel Blob is configured. Image generation and image uploads need it;
+  // chat does not, so it never gates appReady.
+  readonly mediaReady: boolean;
   readonly missing: readonly string[];
   readonly rateLimitReady: boolean;
 };

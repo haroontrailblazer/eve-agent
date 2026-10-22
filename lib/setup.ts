@@ -14,6 +14,9 @@ const RATE_LIMIT_ENV_GROUPS = [
   ["KV_REST_API_URL", "KV_REST_API_TOKEN"],
 ] as const;
 
+// Media (image generation and uploads) is optional: chat works without it.
+const MEDIA_ENV_KEY = "BLOB_READ_WRITE_TOKEN";
+
 function hasEnv(name: string) {
   return Boolean(process.env[name]?.trim());
 }
@@ -24,6 +27,10 @@ export function isAuthConfigured() {
 
 export function isRateLimitConfigured() {
   return RATE_LIMIT_ENV_GROUPS.some((group) => group.every(hasEnv));
+}
+
+export function isMediaConfigured() {
+  return hasEnv(MEDIA_ENV_KEY);
 }
 
 export function getInitialSetupStatus(): SetupStatus {
@@ -69,6 +76,7 @@ function createSetupStatus({
     databaseConfigured,
     databaseReady,
     databaseSchemaReady,
+    mediaReady: isMediaConfigured(),
     missing,
     rateLimitReady,
   };

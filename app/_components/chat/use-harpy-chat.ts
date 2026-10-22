@@ -1,5 +1,6 @@
 "use client";
 
+import { upload } from "@vercel/blob/client";
 import type { ClientSessionState, InputResponse, MessageStreamEvent } from "eve/client";
 import { useEveAgent, type EveMessage } from "eve/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -11,7 +12,7 @@ import {
   markChatPendingMessageAction,
   saveChatSessionAction,
 } from "@/app/actions/chat";
-import { uploadImageAction } from "@/app/actions/images";
+import { recordUploadedMediaAction } from "@/app/actions/media";
 import { listSkillsAction } from "@/app/actions/skills";
 import { useChatShell } from "@/app/_components/chat-shell-context";
 import { buildMessageContent, type Attachment } from "@/lib/chat/attachments";
@@ -19,6 +20,7 @@ import { buildTurnClientContext } from "@/lib/chat/client-context";
 import { deriveChatView, type ChatStatus, type ChatViewState } from "@/lib/chat/derive";
 import type { IndexedChatEvent } from "@/lib/chat/event-rows";
 import type { ActiveChat, ChatListItem } from "@/lib/chat/types";
+import { routeAttachment } from "@/lib/media/attachment-policy";
 import type { SkillSummary } from "@/lib/skills/catalog";
 
 // Stream events are saved in batches, one request per pause in the stream
@@ -179,6 +181,15 @@ export function useHarpyChat({
       setPreparing({ attachments, text });
 
       try {
+        // Checked before anything is saved or uploaded, so a refused file
+        // leaves no trace.
+        const routed = await routeAttachments(attachments);
+
+        if (!routed.ok) {
+          onError(routed.message);
+          return false;
+        }
+
         const limit = await checkSendLimitAction({ message: text });
 
         if (!limit.allowed) {
@@ -192,7 +203,7 @@ export function useHarpyChat({
           onTurnSettled(await markChatPendingMessageAction({ chatId, message: text }));
         }
 
-        const hostedImageUrls = await uploadImages(attachments);
+        const hosted = await uploadBlobImages(routed.attachments);
 
         if (text.startsWith("/") && skillsRef.current === null) {
           try {
@@ -207,10 +218,10 @@ export function useHarpyChat({
         // Drop the local bubble before eve projects its optimistic one, so the
         // two never paint together.
         flushSync(() => setPreparing(null));
-        await agentSend(buildMessageContent(text, attachments), {
+        await agentSend(buildMessageContent(text, hosted.attachments), {
           clientContext: buildTurnClientContext({
             enabled: latest.enabledConnections,
-            hostedImageUrls,
+            hostedImageUrls: hosted.hostedImageUrls,
             message: text,
             skills: skillsRef.current,
           }),
@@ -309,24 +320,75 @@ function summarizeMessage(text: string, attachments: readonly Attachment[]) {
     .join("\n");
 }
 
-// Hosts attached images so generate_image can edit them by URL: a tool cannot
-// read the uploaded bytes. Failed uploads are skipped.
-async function uploadImages(attachments: readonly Attachment[]): Promise<string[]> {
-  const urls = await Promise.all(
-    attachments
-      .filter((attachment) => attachment.mediaType.startsWith("image/"))
-      .map(async (image) => {
-        try {
-          const result = await uploadImageAction({ dataUrl: image.data });
+type RoutedAttachment = {
+  readonly attachment: Attachment;
+  /** The bytes to upload, for an image bound for Blob; null when it stays inline. */
+  readonly blobBody: Blob | null;
+};
 
-          return result.ok ? (result.url ?? null) : null;
-        } catch {
-          return null;
-        }
-      }),
+// Applies the attachment size and type limits. Supported images go to Blob;
+// other files stay inline as data urls.
+async function routeAttachments(
+  attachments: readonly Attachment[],
+): Promise<
+  | { readonly ok: true; readonly attachments: readonly RoutedAttachment[] }
+  | { readonly ok: false; readonly message: string }
+> {
+  const routed: RoutedAttachment[] = [];
+
+  for (const attachment of attachments) {
+    const body = await (await fetch(attachment.data)).blob();
+    const route = routeAttachment({ size: body.size, type: attachment.mediaType });
+
+    if (route.kind === "reject") {
+      return { message: route.message, ok: false };
+    }
+
+    routed.push({ attachment, blobBody: route.kind === "blob-image" ? body : null });
+  }
+
+  return { attachments: routed, ok: true };
+}
+
+// Uploads images straight to public Blob and records them, so the agent gets
+// a url it can pass to generate_image (a tool cannot read attached bytes) and
+// large images never travel in the chat request.
+async function uploadBlobImages(routed: readonly RoutedAttachment[]): Promise<{
+  readonly attachments: Attachment[];
+  readonly hostedImageUrls: string[];
+}> {
+  const results = await Promise.all(
+    routed.map(async ({ attachment, blobBody }) => {
+      if (blobBody === null) {
+        return { attachment, hostedUrl: null };
+      }
+
+      try {
+        const blob = await upload(`uploads/${attachment.filename}`, blobBody, {
+          access: "public",
+          contentType: attachment.mediaType,
+          handleUploadUrl: "/api/media/upload",
+        });
+        const recorded = await recordUploadedMediaAction({
+          contentType: blob.contentType,
+          pathname: blob.pathname,
+          size: blobBody.size,
+          url: blob.url,
+        });
+
+        return { attachment: { ...attachment, data: recorded.url }, hostedUrl: recorded.url };
+      } catch (error) {
+        throw new Error(
+          `Couldn't upload ${attachment.filename}. ${toErrorMessage(error, "Try again.")}`,
+        );
+      }
+    }),
   );
 
-  return urls.filter((url): url is string => url !== null);
+  return {
+    attachments: results.map((result) => result.attachment),
+    hostedImageUrls: results.flatMap((result) => (result.hostedUrl ? [result.hostedUrl] : [])),
+  };
 }
 
 function describeTurnFailure(event: Extract<MessageStreamEvent, { type: "turn.failed" }>) {

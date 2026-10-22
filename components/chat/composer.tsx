@@ -20,6 +20,7 @@ import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getChatMessageLength, MAX_CHAT_MESSAGE_CHARS } from "@/lib/chat/limits";
+import { routeAttachment } from "@/lib/media/attachment-policy";
 import { filterSkills, type SkillSummary } from "@/lib/skills/catalog";
 import { cn } from "@/lib/utils";
 
@@ -30,8 +31,6 @@ const SLASH_QUERY_RE = /^\/([\w-]*)$/;
 // once it resolves to a real skill, like claude.ai.
 const LEADING_COMMAND_RE = /^\/([\w-]+)(?=\s|$)/;
 
-const MAX_ATTACHMENT_MB = 10;
-const MAX_ATTACHMENT_BYTES = MAX_ATTACHMENT_MB * 1024 * 1024;
 // Paste more than this many characters and it becomes a text attachment instead
 // of flooding the input — the way claude.ai handles big pastes.
 const PASTE_TO_FILE_CHARS = 1800;
@@ -152,17 +151,21 @@ export function ChatComposer({
 
   const addFiles = useCallback((incoming: readonly File[]) => {
     const accepted: File[] = [];
-    let hasOversized = false;
+    // The same limits the send path applies: images up to 20 MB, other files
+    // up to 3 MB.
+    const rejections = new Set<string>();
 
     for (const file of incoming) {
-      if (file.size > MAX_ATTACHMENT_BYTES) {
-        hasOversized = true;
+      const route = routeAttachment({ size: file.size, type: file.type });
+
+      if (route.kind === "reject") {
+        rejections.add(route.message);
       } else {
         accepted.push(file);
       }
     }
 
-    setAttachmentError(hasOversized ? `Each file must be under ${MAX_ATTACHMENT_MB} MB.` : null);
+    setAttachmentError(rejections.size > 0 ? [...rejections].join(" ") : null);
 
     if (accepted.length > 0) {
       setFiles((current) => [...current, ...accepted]);
