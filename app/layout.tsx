@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthDisplayPreHydrationHead } from "@/components/auth/auth-display";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getAppOrigin } from "@/lib/app-origin";
 import { themeInitScript } from "@/lib/theme";
@@ -66,6 +67,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
       <body className={`${geistSans.className} antialiased`}>
         <ThemeProvider>
           <TooltipProvider>{children}</TooltipProvider>
+          <Toaster />
         </ThemeProvider>
         <Analytics />
         <SpeedInsights />

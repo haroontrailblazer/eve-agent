@@ -9,7 +9,6 @@ import {
 } from "@/app/_components/agent-chat-events";
 import { ChatSession } from "@/app/_components/chat/chat-session";
 import { ComposerFooterControls } from "@/app/_components/chat/composer-footer-controls";
-import { ErrorToast } from "@/app/_components/chat/error-toast";
 import { LegacyChatView } from "@/app/_components/chat/legacy-chat-view";
 import { ThinkingMessage } from "@/app/_components/chat/thinking-message";
 import { createLocalUserMessage } from "@/app/_components/chat/use-harpy-chat";
@@ -17,6 +16,7 @@ import { useChatShell } from "@/app/_components/chat-shell-context";
 import { ChatComposer } from "@/components/chat/composer";
 import { ChatConversation, ChatConversationContent } from "@/components/chat/conversation";
 import { AgentMessage } from "@/components/chat/message";
+import { showRequestError } from "@/components/harpy/show-request-error";
 import {
   readPendingAttachments,
   writePendingAttachments,
@@ -52,14 +52,11 @@ export function SessionChatPage({
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(null);
   const [loadedChat, setLoadedChat] = useState<LoadedChat | null>(null);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
-  const [clientError, setClientError] = useState<string | null>(null);
-  const [dismissedError, setDismissedError] = useState<string | null>(null);
   const currentChatIdRef = useRef(chatId);
   const loadedChatIdRef = useRef<string | null>(null);
   const provisionalCreateStartedRef = useRef(new Set<string>());
   const isProvisionalChat = isProvisionalChatId(chatId);
   const router = useRouter();
-  const toastError = clientError && dismissedError !== clientError ? clientError : null;
 
   useEffect(() => {
     currentChatIdRef.current = chatId;
@@ -75,7 +72,6 @@ export function SessionChatPage({
 
     if (restoredPendingMessage) {
       setPendingUserMessage((current) => current ?? restoredPendingMessage);
-      setClientError(null);
     }
   }, [chatId]);
 
@@ -87,7 +83,7 @@ export function SessionChatPage({
     const pendingMessage = readPendingChatMessage(chatId);
 
     if (!pendingMessage) {
-      setClientError("Message could not be restored. Start a new chat.");
+      showRequestError("Message could not be restored. Start a new chat.");
       return;
     }
 
@@ -98,7 +94,6 @@ export function SessionChatPage({
     }
 
     provisionalCreateStartedRef.current.add(chatId);
-    setClientError(null);
 
     void (async () => {
       try {
@@ -129,7 +124,7 @@ export function SessionChatPage({
           window.sessionStorage.setItem("eve-chat-draft", pendingMessage);
         } catch {}
 
-        setClientError(error instanceof Error ? error.message : "Failed to start chat.");
+        showRequestError(error instanceof Error ? error.message : "Failed to start chat.");
         router.replace("/", { scroll: false });
       }
     })();
@@ -204,7 +199,7 @@ export function SessionChatPage({
         }
 
         if (!response.ok) {
-          setClientError(
+          showRequestError(
             response.status === 404
               ? "Chat not found."
               : "Failed to load chat history.",
@@ -221,10 +216,9 @@ export function SessionChatPage({
         setActiveChat((current) =>
           shouldKeepCurrentActiveChat(current, data.chat, chatId) ? current : data.chat,
         );
-        setClientError(null);
       } catch (error) {
         if (!cancelled && !abortController.signal.aborted) {
-          setClientError(
+          showRequestError(
             error instanceof Error ? error.message : "Failed to load chat history.",
           );
         }
@@ -260,21 +254,10 @@ export function SessionChatPage({
     setLoadedChat({ autoSend, chat: activeChat });
   }, [activeChat]);
 
-  useEffect(() => {
-    setDismissedError(null);
-  }, [clientError]);
-
   const loaded = loadedChat?.chat.id === chatId ? loadedChat : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {toastError ? (
-        <ErrorToast
-          message={toastError}
-          onDismiss={() => setDismissedError(toastError)}
-        />
-      ) : null}
-
       {loaded === null ? (
         <ChatLoadingView
           chatId={chatId}

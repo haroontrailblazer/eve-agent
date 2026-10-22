@@ -3,11 +3,11 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ComposerFooterControls } from "@/app/_components/chat/composer-footer-controls";
-import { ErrorToast } from "@/app/_components/chat/error-toast";
 import { useChatShell } from "@/app/_components/chat-shell-context";
 import { HarpyLogo } from "@/app/_components/harpy-logo";
 import { HarpyWordmark } from "@/app/_components/harpy-wordmark";
 import { ChatComposer } from "@/components/chat/composer";
+import { showRequestError } from "@/components/harpy/show-request-error";
 import { getChatMessageLengthError } from "@/lib/chat/limits";
 import {
   createProvisionalChatId,
@@ -25,13 +25,10 @@ export function HomeChatPage() {
   } = useChatShell();
   const [draft, setDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [clientError, setClientError] = useState<string | null>(null);
-  const [dismissedError, setDismissedError] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const setupReady = setupStatus.appReady;
   const pathname = usePathname();
   const router = useRouter();
-  const toastError = clientError && dismissedError !== clientError ? clientError : null;
 
   useEffect(() => {
     setActiveChatId(null);
@@ -57,10 +54,6 @@ export function HomeChatPage() {
     }
   }, [viewer]);
 
-  useEffect(() => {
-    setDismissedError(null);
-  }, [clientError]);
-
   const handleSubmit = useCallback(
     async (text: string, files: File[]) => {
       const message = text.trim();
@@ -71,22 +64,20 @@ export function HomeChatPage() {
 
       if (!message) {
         if (files.length > 0) {
-          setClientError("Add a short message to send with your files.");
+          showRequestError("Add a short message to send with your files.");
         }
         return;
       }
 
-      setClientError(null);
-
       const lengthError = getChatMessageLengthError(message);
 
       if (lengthError) {
-        setClientError(lengthError);
+        showRequestError(lengthError);
         return;
       }
 
       if (!setupReady) {
-        setClientError(
+        showRequestError(
           getHomeComposerDisabledReason({ setupStatus, submitting }) ??
             "Finish setup before chatting.",
         );
@@ -109,7 +100,7 @@ export function HomeChatPage() {
         submittingRef.current = false;
         setSubmitting(false);
         setDraft(message);
-        setClientError("Failed to start chat.");
+        showRequestError("Failed to start chat.");
         return;
       }
 
@@ -120,7 +111,7 @@ export function HomeChatPage() {
             await filesToAttachments(files),
           );
           if (!stored) {
-            setClientError(
+            showRequestError(
               "Those files are too large to carry from the start page. Open the chat and attach them there.",
             );
           }
@@ -155,13 +146,6 @@ export function HomeChatPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col pt-14 md:pt-8">
-      {toastError ? (
-        <ErrorToast
-          message={toastError}
-          onDismiss={() => setDismissedError(toastError)}
-        />
-      ) : null}
-
       <div className="flex min-h-0 flex-1 flex-col justify-between px-4 pt-8 pb-4 sm:px-6 sm:pb-6">
         <div className="flex min-h-0 flex-1 items-center justify-center pb-20 sm:pb-[12vh]">
           <div className="w-full max-w-2xl space-y-5 sm:space-y-7 md:space-y-8">

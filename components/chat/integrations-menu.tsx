@@ -9,9 +9,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import type { EnabledConnections } from "@/app/_components/chat-shell-context";
 import type { SetupStatus } from "@/lib/chat/types";
-import { cn } from "@/lib/utils";
 
 type ConnectionItem = {
   readonly key: keyof EnabledConnections;
@@ -79,24 +79,28 @@ export function IntegrationsMenu({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm text-foreground">{label}</span>
               </span>
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
-                  enabled ? "bg-emerald-500" : "bg-muted",
-                )}
-              >
-                <span
-                  className={cn(
-                    "size-3 rounded-full bg-white shadow-sm transition-transform",
-                    enabled ? "translate-x-[15px]" : "translate-x-0.5",
-                  )}
-                />
-              </span>
+              <ConnectionSwitch enabled={enabled} />
             </DropdownMenuItem>
           );
         })}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * The on/off indicator inside a menu item. The item is the control, so this is
+ * visual only: hidden from assistive tech, out of the tab order, and not a
+ * click target of its own.
+ */
+export function ConnectionSwitch({ enabled }: { readonly enabled: boolean }) {
+  return (
+    <Switch
+      aria-hidden="true"
+      checked={enabled}
+      className="pointer-events-none"
+      size="sm"
+      tabIndex={-1}
+    />
   );
 }

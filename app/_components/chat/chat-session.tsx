@@ -3,7 +3,6 @@
 import type { EveMessage } from "eve/react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { ComposerFooterControls } from "@/app/_components/chat/composer-footer-controls";
-import { ErrorToast } from "@/app/_components/chat/error-toast";
 import { ThinkingMessage, useThinkingPresence } from "@/app/_components/chat/thinking-message";
 import { useHarpyChat } from "@/app/_components/chat/use-harpy-chat";
 import { useChatShell } from "@/app/_components/chat-shell-context";
@@ -14,6 +13,7 @@ import {
   ChatScrollButton,
 } from "@/components/chat/conversation";
 import { AgentMessage } from "@/components/chat/message";
+import { showRequestError } from "@/components/harpy/show-request-error";
 import { filesToAttachments, type Attachment } from "@/lib/chat/attachments";
 import { getAuthorizationDisabledReason } from "@/lib/chat/authorization";
 import { getSetupDisabledReason } from "@/lib/chat/setup-reason";
@@ -32,23 +32,20 @@ export function ChatSession({
 }) {
   const { setupStatus, touchChat } = useChatShell();
   const [draft, setDraft] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const harpy = useHarpyChat({ chat, onError: setErrorMessage, onTurnSettled: touchChat });
+  const harpy = useHarpyChat({ chat, onError: showRequestError, onTurnSettled: touchChat });
   const autoSentRef = useRef(false);
   const { cancel, send } = harpy;
 
   // Calls send synchronously, so its message bubble shows in the same render.
   const sendMessage = useCallback(
     async (text: string, attachments: readonly Attachment[]) => {
-      setErrorMessage(null);
-
       try {
         if (!(await send(text, attachments))) {
           setDraft(text);
         }
       } catch (error) {
         setDraft(text);
-        setErrorMessage(error instanceof Error ? error.message : "Failed to send message.");
+        showRequestError(error instanceof Error ? error.message : "Failed to send message.");
       }
     },
     [send],
@@ -64,7 +61,7 @@ export function ChatSession({
           attachments = await filesToAttachments(files);
         } catch {
           setDraft(text);
-          setErrorMessage("Failed to read the attached files.");
+          showRequestError("Failed to read the attached files.");
           return;
         }
       }
@@ -105,10 +102,6 @@ export function ChatSession({
 
   return (
     <>
-      {errorMessage ? (
-        <ErrorToast message={errorMessage} onDismiss={() => setErrorMessage(null)} />
-      ) : null}
-
       <div className="h-12 shrink-0" />
       {isEmpty ? (
         <div className="min-h-0 flex-1" />
