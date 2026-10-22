@@ -74,7 +74,7 @@ export function IntegrationsMenu({
               role="menuitemcheckbox"
             >
               <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-foreground">
-                <Icon className="size-[18px] text-foreground" />
+                <Icon className="size-4.5 text-foreground" />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm text-foreground">{label}</span>
