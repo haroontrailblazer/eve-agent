@@ -40,7 +40,7 @@ const DEPLOY_URL = (() => {
 
 export function TemplateFooterLinks() {
   return (
-    <footer className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 px-2 text-center text-[11px] leading-4 text-muted-foreground/50 sm:text-xs">
+    <footer className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 px-2 text-center text-meta leading-4 text-muted-foreground/50 sm:text-xs">
       <span>
         Build your own chat agent with <FooterLink href={EVE_URL}>eve</FooterLink>:
       </span>

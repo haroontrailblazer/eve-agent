@@ -7,13 +7,13 @@ export function UserMenu({ viewer }: { readonly viewer: Viewer }) {
   return (
     <Link
       aria-label="Open your profile"
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
       href="/profile"
     >
       <UserAvatar viewer={viewer} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-xs font-medium text-foreground">{viewer.name}</span>
-        <span className="block truncate text-[11px] text-muted-foreground">{viewer.email}</span>
+        <span className="block truncate text-meta text-muted-foreground">{viewer.email}</span>
       </span>
       <ChevronRightIcon className="size-3.5 text-muted-foreground" />
     </Link>

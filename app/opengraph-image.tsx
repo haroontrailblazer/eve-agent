@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { BRAND_IMAGE_COLORS } from "@/lib/brand";
 import { HarpyImageMark } from "./_components/harpy-image-mark";
 
 export const alt = "harpy";
@@ -16,7 +17,7 @@ export default function OpengraphImage() {
       <div
         style={{
           alignItems: "center",
-          background: "#050505",
+          background: BRAND_IMAGE_COLORS.ogBackground,
           color: "white",
           display: "flex",
           flexDirection: "column",
@@ -40,7 +41,7 @@ export default function OpengraphImage() {
         </div>
         <div
           style={{
-            color: "#a1a1a1",
+            color: BRAND_IMAGE_COLORS.ogMuted,
             display: "flex",
             fontSize: 38,
           }}

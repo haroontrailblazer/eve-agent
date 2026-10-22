@@ -306,7 +306,7 @@ export function ChatComposer({
   const form = (
     <form
       className={cn(
-        "relative min-w-0 rounded-[14px] border border-border/80 bg-card/95 shadow-sm transition-colors focus-within:border-border focus-within:ring-[1px] focus-within:ring-foreground/5 dark:bg-muted/45 dark:focus-within:ring-white/5",
+        "relative min-w-0 rounded-xl border border-border/80 bg-card/95 shadow-sm transition-colors focus-within:border-border focus-within:ring-1 focus-within:ring-foreground/5 dark:bg-muted/45 dark:focus-within:ring-white/5",
         className,
       )}
       data-chat-composer
@@ -317,7 +317,7 @@ export function ChatComposer({
       </label>
       {skillMenuOpen ? (
         <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-lg">
-          <div className="flex items-center gap-1.5 border-b border-border/60 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="flex items-center gap-1.5 border-b border-border/60 px-3 py-1.5 text-meta font-medium uppercase tracking-wide text-muted-foreground">
             <SparklesIcon className="size-3" />
             Skills
           </div>
@@ -336,14 +336,14 @@ export function ChatComposer({
                   onMouseEnter={() => setActiveSkillIndex(index)}
                   type="button"
                 >
-                  <span className="shrink-0 rounded bg-background px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                  <span className="shrink-0 rounded bg-background px-1.5 py-0.5 font-mono text-meta text-muted-foreground">
                     /{skill.slug}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                     {skill.description || skill.name}
                   </span>
                   {skill.source === "custom" ? (
-                    <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-500">
+                    <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-meta font-medium text-muted-foreground">
                       custom
                     </span>
                   ) : null}
@@ -373,7 +373,7 @@ export function ChatComposer({
         {highlightedCommand !== null && !textareaDisabled ? (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 max-h-32 overflow-hidden px-3 pt-3 pb-1 text-base leading-6 break-words whitespace-pre-wrap select-none sm:px-4 md:text-[15px]"
+            className="pointer-events-none absolute inset-0 max-h-32 overflow-hidden px-3 pt-3 pb-1 text-base leading-6 break-words whitespace-pre-wrap select-none sm:px-4 md:text-body"
             ref={highlightRef}
           >
             <span className="text-muted-foreground">{highlightedCommand}</span>
@@ -383,7 +383,7 @@ export function ChatComposer({
         <textarea
           autoFocus={autoFocus}
           className={cn(
-            "max-h-32 min-h-12 w-full resize-none bg-transparent px-3 pt-3 pb-1 text-base leading-6 outline-none placeholder:text-muted-foreground/45 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 md:text-[15px] dark:placeholder:text-muted-foreground/60",
+            "max-h-32 min-h-12 w-full resize-none bg-transparent px-3 pt-3 pb-1 text-base leading-6 outline-none placeholder:text-muted-foreground/45 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 md:text-body dark:placeholder:text-muted-foreground/60",
             isCommandHighlighted ? "text-transparent caret-foreground" : undefined,
           )}
           data-chat-composer-input

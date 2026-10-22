@@ -10,6 +10,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CheckIcon,
+  CircleQuestionMarkIcon,
   Loader2Icon,
   XIcon,
 } from "lucide-react";
@@ -87,7 +88,7 @@ export function AgentMessage({
         className={cn(
           "min-w-0",
           isUser
-            ? "max-w-[85%] rounded-[18px] border border-border/40 bg-muted/70 px-3 py-1.5 text-[15px] leading-6 text-foreground shadow-sm"
+            ? "max-w-[85%] rounded-2xl border border-border/40 bg-muted/70 px-3 py-1.5 text-body leading-6 text-foreground shadow-sm"
             : "w-full max-w-none text-sm leading-relaxed text-foreground",
         )}
       >
@@ -681,14 +682,14 @@ function ToolStatusIcon({ status }: { readonly status: ToolStatus }) {
 
   return (
     <span className="flex size-4 shrink-0 items-center justify-center self-center">
-      <CheckIcon className={cn(className, "text-emerald-500")} />
+      <CheckIcon className={cn(className, "text-status-posted")} />
     </span>
   );
 }
 
 function ToolNameLabel({ part }: { readonly part: EveDynamicToolPart }) {
   return (
-    <span className="shrink-0 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+    <span className="shrink-0 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-meta text-muted-foreground">
       {formatToolName(resolveToolName(part))}
     </span>
   );
@@ -709,10 +710,10 @@ function ToolPayload({
 
   return (
     <div className="space-y-1">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-meta text-muted-foreground">{label}</p>
       <pre
         className={cn(
-          "max-h-56 overflow-auto rounded bg-muted/30 p-2 font-mono text-[11px] leading-5 text-muted-foreground",
+          "max-h-56 overflow-auto rounded bg-muted/30 p-2 font-mono text-meta leading-5 text-muted-foreground",
           tone === "destructive" ? "bg-destructive/10 text-destructive" : undefined,
         )}
       >
@@ -770,8 +771,11 @@ function InputRequestActions({
   };
 
   return (
-    <div className="space-y-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-      <p className="text-sm text-muted-foreground">{inputRequest.prompt}</p>
+    <div className="space-y-3 rounded-md border border-border bg-muted/40 p-3">
+      <p className="flex items-start gap-2 text-sm text-muted-foreground">
+        <CircleQuestionMarkIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-status-review" />
+        <span>{inputRequest.prompt}</span>
+      </p>
       {inputRequest.options?.length ? (
         <div className="flex flex-wrap gap-2">
           {inputRequest.options.map((option) => (

@@ -46,7 +46,7 @@ export function ThinkingMessage({ isVisible }: { readonly isVisible: boolean }) 
       ].join(" ")}
       role="status"
     >
-      <div className="flex min-h-14 items-center gap-2.5 px-3 text-[15px] font-medium leading-6 text-muted-foreground">
+      <div className="flex min-h-14 items-center gap-2.5 px-3 text-body font-medium leading-6 text-muted-foreground">
         <HarpyLogo className="harpy-logo--lively size-6 shrink-0" />
         <span className="shimmer-text">Thinking...</span>
       </div>

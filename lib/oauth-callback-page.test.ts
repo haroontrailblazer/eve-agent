@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BRAND_IMAGE_COLORS } from "@/lib/brand";
 import { renderCallbackPage } from "@/lib/oauth-callback-page";
 
 describe("renderCallbackPage", () => {
@@ -30,6 +31,14 @@ describe("renderCallbackPage", () => {
 
     expect(good).toContain("✓");
     expect(bad).toContain("⚠");
+  });
+
+  it("takes its colors from the brand image colors", async () => {
+    const text = await renderCallbackPage({ title: "t", body: "b", ok: true }).text();
+
+    expect(text).toContain(`background:${BRAND_IMAGE_COLORS.callbackBackground}`);
+    expect(text).toContain(`color:${BRAND_IMAGE_COLORS.callbackText}`);
+    expect(text).toContain(`color:${BRAND_IMAGE_COLORS.callbackMuted}`);
   });
 
   it("uses no inline scripts or event handlers", async () => {
