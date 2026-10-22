@@ -240,6 +240,8 @@ export function SessionChatPage({
   // Settles once per chat whether it sends its pending first message. Reading
   // the pending attachments removes them from storage, so this runs in an
   // effect: Strict Mode renders twice, and the second read would find nothing.
+  // The local handoff marker is read before it is cleared, so only the tab that
+  // handed the message over sends it, never a stale copy of the chat.
   useEffect(() => {
     if (!activeChat || loadedChatIdRef.current === activeChat.id) {
       return;
@@ -247,9 +249,10 @@ export function SessionChatPage({
 
     loadedChatIdRef.current = activeChat.id;
 
+    const hasLocalHandoff = readPendingChatMessage(activeChat.id) !== null;
     const message = activeChat.pendingUserMessage;
     const autoSend =
-      message !== null && shouldAutoSendPending(activeChat)
+      message !== null && shouldAutoSendPending(activeChat, hasLocalHandoff)
         ? { attachments: readPendingAttachments(activeChat.id), message }
         : null;
 
