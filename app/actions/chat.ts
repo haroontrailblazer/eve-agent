@@ -1,18 +1,18 @@
 "use server";
 
-import type { HandleMessageStreamEvent, SessionState } from "eve/client";
+import type { ClientSessionState } from "eve/client";
 import {
-  appendChatEvent,
-  clearChatPendingMessage,
+  appendChatEvents,
   createChat,
   deleteChatForUser,
+  finalizeChatTurn,
   listChatsByUser,
   markChatPendingMessage,
-  saveChatSnapshot,
-  saveChatSessionState,
-  skipChatAuthorization,
+  saveChatSession,
 } from "@/lib/db/queries";
+import type { IndexedChatEvent } from "@/lib/chat/event-rows";
 import { assertChatMessageLength } from "@/lib/chat/limits";
+import type { ChatListItem } from "@/lib/chat/types";
 import { RateLimitError, enforceRateLimit } from "@/lib/rate-limit";
 import { getServerViewer } from "@/lib/session";
 
@@ -67,27 +67,10 @@ export async function checkSendLimitAction(input?: { readonly message?: string }
   }
 }
 
-export async function saveChatSnapshotAction(input: {
-  readonly chatId: string;
-  readonly events: readonly HandleMessageStreamEvent[];
-  readonly session: SessionState;
-}) {
-  const viewer = await requireViewer();
-
-  await saveChatSnapshot({
-    chatId: input.chatId,
-    events: input.events,
-    session: input.session,
-    userId: viewer.id,
-  });
-
-  return { ok: true };
-}
-
 export async function markChatPendingMessageAction(input: {
   readonly chatId: string;
   readonly message: string;
-}) {
+}): Promise<ChatListItem> {
   const viewer = await requireViewer();
 
   assertChatMessageLength(input.message);
@@ -99,62 +82,59 @@ export async function markChatPendingMessageAction(input: {
   });
 }
 
-export async function clearChatPendingMessageAction(chatId: string) {
+export async function appendChatEventsAction(input: {
+  chatId: string;
+  events: readonly IndexedChatEvent[];
+}): Promise<{ ok: true }> {
   const viewer = await requireViewer();
 
-  await clearChatPendingMessage({
-    chatId,
-    userId: viewer.id,
-  });
+  assertChatId(input.chatId);
 
-  return { ok: true };
-}
-
-export async function skipChatAuthorizationAction(input: {
-  readonly chatId: string;
-  readonly events: readonly HandleMessageStreamEvent[];
-  readonly session: SessionState;
-}) {
-  const viewer = await requireViewer();
-
-  return skipChatAuthorization({
+  await appendChatEvents({
     chatId: input.chatId,
     events: input.events,
-    session: input.session,
-    userId: viewer.id,
-  });
-}
-
-export async function appendChatEventAction(input: {
-  readonly chatId: string;
-  readonly event: HandleMessageStreamEvent;
-  readonly eventIndex: number;
-}) {
-  const viewer = await requireViewer();
-
-  await appendChatEvent({
-    chatId: input.chatId,
-    event: input.event,
-    eventIndex: input.eventIndex,
     userId: viewer.id,
   });
 
   return { ok: true };
 }
 
-export async function saveChatSessionStateAction(input: {
-  readonly chatId: string;
-  readonly session: SessionState;
-}) {
+export async function saveChatSessionAction(input: {
+  chatId: string;
+  session: ClientSessionState;
+}): Promise<{ ok: true }> {
   const viewer = await requireViewer();
 
-  await saveChatSessionState({
+  assertChatId(input.chatId);
+
+  await saveChatSession({
     chatId: input.chatId,
     session: input.session,
     userId: viewer.id,
   });
 
   return { ok: true };
+}
+
+export async function finalizeChatTurnAction(input: {
+  chatId: string;
+  session: ClientSessionState | null;
+}): Promise<ChatListItem> {
+  const viewer = await requireViewer();
+
+  assertChatId(input.chatId);
+
+  const item = await finalizeChatTurn({
+    chatId: input.chatId,
+    session: input.session,
+    userId: viewer.id,
+  });
+
+  if (!item) {
+    throw new Error("Chat not found.");
+  }
+
+  return item;
 }
 
 export async function deleteChatAction(chatId: string) {
@@ -163,6 +143,12 @@ export async function deleteChatAction(chatId: string) {
   await deleteChatForUser(chatId, viewer.id);
 
   return listChatsByUser(viewer.id);
+}
+
+function assertChatId(chatId: string) {
+  if (typeof chatId !== "string" || chatId.trim() === "") {
+    throw new Error("Chat id is required.");
+  }
 }
 
 async function requireViewer() {

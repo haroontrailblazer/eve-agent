@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gte, lt, or, sql } from "drizzle-orm";
-import type { HandleMessageStreamEvent, SessionState } from "eve/client";
-import { isChatTurnSettledEvent } from "@/lib/chat/events";
+import { and, asc, desc, eq, lt, or, sql } from "drizzle-orm";
+import type { ClientSessionState } from "eve/client";
+import { toActiveChat } from "@/lib/chat/active-chat";
+import { toChatEventRows, type IndexedChatEvent } from "@/lib/chat/event-rows";
 import type { ActiveChat, ChatListItem, ChatListPage } from "@/lib/chat/types";
 import { createFallbackTitle, DEFAULT_CHAT_TITLE } from "@/lib/chat/title";
 import { chat, chatEvent } from "@/lib/db/schema";
@@ -117,9 +118,9 @@ export async function getChatForUser(chatId: string, userId: string): Promise<Ac
     .select({
       id: chat.id,
       title: chat.title,
+      legacy: chat.legacy,
       eveSession: chat.eveSession,
       pendingUserMessage: chat.pendingUserMessage,
-      pendingUserMessageCreatedAt: chat.pendingUserMessageCreatedAt,
     })
     .from(chat)
     .where(and(eq(chat.id, chatId), eq(chat.userId, userId)))
@@ -130,32 +131,15 @@ export async function getChatForUser(chatId: string, userId: string): Promise<Ac
   }
 
   const events = await db
-    .select({
-      createdAt: chatEvent.createdAt,
-      event: chatEvent.event,
-    })
+    .select({ event: chatEvent.event })
     .from(chatEvent)
     .where(eq(chatEvent.chatId, chatId))
     .orderBy(asc(chatEvent.eventIndex));
 
-  const eventValues = events.map((eventRow) => eventRow.event);
-  const pendingMessageCreatedAt = row.pendingUserMessageCreatedAt;
-  const hasCurrentTurnCompleted = Boolean(
-    pendingMessageCreatedAt &&
-    events.some(
-      (eventRow) =>
-        eventRow.createdAt >= pendingMessageCreatedAt &&
-        isChatTurnSettledEvent(eventRow.event),
-    ),
+  return toActiveChat(
+    row,
+    events.map((eventRow) => eventRow.event),
   );
-
-  return {
-    events: eventValues,
-    id: row.id,
-    pendingUserMessage: hasCurrentTurnCompleted ? null : row.pendingUserMessage,
-    session: row.eveSession ?? undefined,
-    title: row.title,
-  };
 }
 
 export async function markChatPendingMessage({
@@ -166,7 +150,7 @@ export async function markChatPendingMessage({
   readonly chatId: string;
   readonly message: string;
   readonly userId: string;
-}) {
+}): Promise<ChatListItem> {
   const pendingMessage = message.trim();
 
   if (!pendingMessage) {
@@ -205,35 +189,19 @@ export async function markChatPendingMessage({
   };
 }
 
-export async function clearChatPendingMessage({
-  chatId,
-  userId,
-}: {
-  readonly chatId: string;
-  readonly userId: string;
-}) {
-  await db
-    .update(chat)
-    .set({
-      pendingUserMessage: null,
-      pendingUserMessageCreatedAt: null,
-    })
-    .where(and(eq(chat.id, chatId), eq(chat.userId, userId)));
-}
-
-export async function skipChatAuthorization({
+export async function appendChatEvents({
   chatId,
   events,
-  session,
   userId,
 }: {
   readonly chatId: string;
-  readonly events: readonly HandleMessageStreamEvent[];
-  readonly session: SessionState;
+  readonly events: readonly IndexedChatEvent[];
   readonly userId: string;
-}) {
-  if (events.length === 0) {
-    throw new Error("No authorization events to save.");
+}): Promise<void> {
+  const rows = toChatEventRows(events);
+
+  if (rows.length === 0) {
+    return;
   }
 
   const [ownedChat] = await db
@@ -243,38 +211,57 @@ export async function skipChatAuthorization({
     .limit(1);
 
   if (!ownedChat) {
-    throw new Error("Chat not found.");
+    return;
   }
 
-  const [lastEvent] = await db
-    .select({ eventIndex: chatEvent.eventIndex })
-    .from(chatEvent)
-    .where(eq(chatEvent.chatId, chatId))
-    .orderBy(desc(chatEvent.eventIndex))
-    .limit(1);
-  const eventIndex = (lastEvent?.eventIndex ?? -1) + 1;
-
+  // No conflict target: this absorbs both the (chat, event index) and the
+  // (chat, eve event id) unique indexes, so replayed events are ignored.
   await db
     .insert(chatEvent)
     .values(
-      events.map((event, offset) => ({
+      rows.map((row) => ({
         chatId,
-        event,
-        eventIndex: eventIndex + offset,
+        event: row.event,
+        eveEventId: row.eveEventId,
+        eventIndex: row.index,
         id: randomUUID(),
       })),
     )
-    .onConflictDoUpdate({
-      set: { event: sql`excluded.event` },
-      target: [chatEvent.chatId, chatEvent.eventIndex],
-    });
+    .onConflictDoNothing();
+}
 
-  const [row] = await db
+export async function saveChatSession({
+  chatId,
+  session,
+  userId,
+}: {
+  readonly chatId: string;
+  readonly session: ClientSessionState;
+  readonly userId: string;
+}): Promise<void> {
+  await db
     .update(chat)
     .set({
       eveSession: session,
       pendingUserMessage: null,
       pendingUserMessageCreatedAt: null,
+    })
+    .where(and(eq(chat.id, chatId), eq(chat.userId, userId)));
+}
+
+export async function finalizeChatTurn({
+  chatId,
+  session,
+  userId,
+}: {
+  readonly chatId: string;
+  readonly session: ClientSessionState | null;
+  readonly userId: string;
+}): Promise<ChatListItem | null> {
+  const [row] = await db
+    .update(chat)
+    .set({
+      ...(session ? { eveSession: session } : {}),
       updatedAt: new Date(),
     })
     .where(and(eq(chat.id, chatId), eq(chat.userId, userId)))
@@ -285,123 +272,14 @@ export async function skipChatAuthorization({
     });
 
   if (!row) {
-    throw new Error("Chat not found.");
+    return null;
   }
 
   return {
-    chat: {
-      id: row.id,
-      title: row.title,
-      updatedAt: row.updatedAt.toISOString(),
-    },
-    eventCount: events.length,
-    eventIndex,
+    id: row.id,
+    title: row.title,
+    updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-export async function saveChatSessionState({
-  chatId,
-  session,
-  userId,
-}: {
-  readonly chatId: string;
-  readonly session: SessionState;
-  readonly userId: string;
-}) {
-  await db
-    .update(chat)
-    .set({
-      eveSession: session,
-    })
-    .where(and(eq(chat.id, chatId), eq(chat.userId, userId)));
-}
-
-export async function appendChatEvent({
-  chatId,
-  event,
-  eventIndex,
-  userId,
-}: {
-  readonly chatId: string;
-  readonly event: HandleMessageStreamEvent;
-  readonly eventIndex: number;
-  readonly userId: string;
-}) {
-  const [ownedChat] = await db
-    .select({ id: chat.id })
-    .from(chat)
-    .where(and(eq(chat.id, chatId), eq(chat.userId, userId)))
-    .limit(1);
-
-  if (!ownedChat) {
-    throw new Error("Chat not found.");
-  }
-
-  await db
-    .insert(chatEvent)
-    .values({
-      chatId,
-      event,
-      eventIndex,
-      id: randomUUID(),
-    })
-    .onConflictDoUpdate({
-      set: { event },
-      target: [chatEvent.chatId, chatEvent.eventIndex],
-    });
-}
-
-export async function saveChatSnapshot({
-  chatId,
-  events,
-  session,
-  userId,
-}: {
-  readonly chatId: string;
-  readonly events: readonly HandleMessageStreamEvent[];
-  readonly session: SessionState;
-  readonly userId: string;
-}) {
-  const [ownedChat] = await db
-    .select({ id: chat.id })
-    .from(chat)
-    .where(and(eq(chat.id, chatId), eq(chat.userId, userId)))
-    .limit(1);
-
-  if (!ownedChat) {
-    throw new Error("Chat not found.");
-  }
-
-  if (events.length > 0) {
-    await db
-      .insert(chatEvent)
-      .values(
-        events.map((event, eventIndex) => ({
-          chatId,
-          event,
-          eventIndex,
-          id: randomUUID(),
-        })),
-      )
-      .onConflictDoUpdate({
-        set: { event: sql`excluded.event` },
-        target: [chatEvent.chatId, chatEvent.eventIndex],
-      });
-  }
-
-  await db
-    .delete(chatEvent)
-    .where(and(eq(chatEvent.chatId, chatId), gte(chatEvent.eventIndex, events.length)));
-
-  await db
-    .update(chat)
-    .set({
-      eveSession: session,
-      pendingUserMessage: null,
-      pendingUserMessageCreatedAt: null,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(chat.id, chatId), eq(chat.userId, userId)));
 }
 
 export async function deleteChatForUser(chatId: string, userId: string) {

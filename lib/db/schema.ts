@@ -9,7 +9,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import type { HandleMessageStreamEvent, SessionState } from "eve/client";
+import type { ClientSessionState, MessageStreamEvent } from "eve/client";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -69,7 +69,10 @@ export const chat = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     title: text("title").notNull().default("New chat"),
-    eveSession: jsonb("eve_session").$type<SessionState | null>(),
+    // Chats saved before eve 0.82 keep their events as read-only history; their
+    // old session state cannot be resumed.
+    legacy: boolean("legacy").notNull().default(false),
+    eveSession: jsonb("eve_session").$type<ClientSessionState | null>(),
     pendingUserMessage: text("pending_user_message"),
     pendingUserMessageCreatedAt: timestamp("pending_user_message_created_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -89,12 +92,15 @@ export const chatEvent = pgTable(
       .notNull()
       .references(() => chat.id, { onDelete: "cascade" }),
     eventIndex: integer("event_index").notNull(),
-    event: jsonb("event").$type<HandleMessageStreamEvent>().notNull().default(sql`'{}'::jsonb`),
+    // eve's `meta.id` for the event; null for events that carry none.
+    eveEventId: text("eve_event_id"),
+    event: jsonb("event").$type<MessageStreamEvent>().notNull().default(sql`'{}'::jsonb`),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
     index("idx_chat_event_chat").on(table.chatId),
     uniqueIndex("idx_chat_event_chat_index").on(table.chatId, table.eventIndex),
+    uniqueIndex("idx_chat_event_chat_eve_event").on(table.chatId, table.eveEventId),
   ],
 );
 
