@@ -20,5 +20,9 @@ export function getSetupDisabledReason(status: SetupStatus): string | undefined 
     return "Provision Upstash Redis before chatting.";
   }
 
+  if (!status.secretsReady) {
+    return "Set SOCIAL_TOKEN_ENCRYPTION_KEY before chatting.";
+  }
+
   return undefined;
 }

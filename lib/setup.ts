@@ -1,4 +1,5 @@
 import type { SetupStatus } from "@/lib/chat/types";
+import { isTokenEncryptionConfigured } from "@/lib/crypto/secret-box";
 import { isDatabaseConfigured, isDatabaseSchemaReady } from "@/lib/db/client";
 
 const AUTH_ENV_KEYS = [
@@ -62,16 +63,18 @@ function createSetupStatus({
   const databaseConfigured = isDatabaseConfigured();
   const authReady = isAuthConfigured();
   const rateLimitReady = isRateLimitConfigured();
+  const secretsReady = isTokenEncryptionConfigured();
   const databaseReady = databaseConfigured && databaseSchemaReady;
   const missing = [
     ...(databaseConfigured ? [] : ["DATABASE_URL"]),
     ...(databaseConfigured && !databaseSchemaReady ? ["database migrations"] : []),
     ...AUTH_ENV_KEYS.filter((key) => !hasEnv(key)),
     ...(rateLimitReady ? [] : ["UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN"]),
+    ...(secretsReady ? [] : ["SOCIAL_TOKEN_ENCRYPTION_KEY"]),
   ];
 
   return {
-    appReady: authReady && databaseReady && rateLimitReady,
+    appReady: authReady && databaseReady && rateLimitReady && secretsReady,
     authReady,
     databaseConfigured,
     databaseReady,
@@ -79,5 +82,6 @@ function createSetupStatus({
     mediaReady: isMediaConfigured(),
     missing,
     rateLimitReady,
+    secretsReady,
   };
 }

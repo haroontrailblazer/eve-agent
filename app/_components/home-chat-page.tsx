@@ -214,6 +214,10 @@ function getHomeComposerDisabledReason({
     return "Provision Upstash Redis before chatting.";
   }
 
+  if (!setupStatus.secretsReady) {
+    return "Set SOCIAL_TOKEN_ENCRYPTION_KEY before chatting.";
+  }
+
   if (submitting) {
     return "Preparing chat.";
   }

@@ -6,6 +6,7 @@ const READY_ENV = {
   DATABASE_URL: "postgres://user:pass@db.example/harpy",
   HARPY_OWNER_EMAIL: "owner@example.com",
   NEXT_PUBLIC_VERCEL_APP_CLIENT_ID: "client-id",
+  SOCIAL_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
   UPSTASH_REDIS_REST_TOKEN: "token",
   UPSTASH_REDIS_REST_URL: "https://redis.example",
   VERCEL_APP_CLIENT_SECRET: "client-secret",
@@ -34,5 +35,33 @@ describe("getInitialSetupStatus mediaReady", () => {
     vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
 
     expect(getInitialSetupStatus().missing).toEqual([]);
+  });
+});
+
+describe("getInitialSetupStatus secretsReady", () => {
+  beforeEach(() => {
+    for (const [name, value] of Object.entries(READY_ENV)) {
+      vi.stubEnv(name, value);
+    }
+  });
+
+  it("is true with a 32 byte encryption key", () => {
+    expect(getInitialSetupStatus()).toMatchObject({ appReady: true, secretsReady: true });
+  });
+
+  it("blocks the app and lists the key as missing without it", () => {
+    vi.stubEnv("SOCIAL_TOKEN_ENCRYPTION_KEY", "");
+
+    const status = getInitialSetupStatus();
+
+    expect(status.secretsReady).toBe(false);
+    expect(status.appReady).toBe(false);
+    expect(status.missing).toEqual(["SOCIAL_TOKEN_ENCRYPTION_KEY"]);
+  });
+
+  it("treats a key of the wrong size as missing", () => {
+    vi.stubEnv("SOCIAL_TOKEN_ENCRYPTION_KEY", Buffer.alloc(16, 7).toString("base64"));
+
+    expect(getInitialSetupStatus()).toMatchObject({ appReady: false, secretsReady: false });
   });
 });

@@ -31,28 +31,17 @@ export type UpsertSkillInput = {
   readonly enabled?: boolean;
 };
 
-// Install or update a skill: insert a new row, or update the existing one for
-// this (user, slug). Only provided fields are overwritten.
+// Install or update a skill: one atomic insert that updates the existing row for
+// this (user, slug) on conflict. The name is always overwritten; the other
+// fields only when provided.
 export async function upsertSkill(input: UpsertSkillInput): Promise<Skill> {
   const slugValue = input.slug.toLowerCase();
-  const existing = await getSkill(input.userId, slugValue);
   const now = new Date();
+  const overwrite: Partial<typeof skill.$inferInsert> = { name: input.name, updatedAt: now };
 
-  if (existing) {
-    const rows = await db
-      .update(skill)
-      .set({
-        name: input.name,
-        description: input.description === undefined ? existing.description : input.description,
-        prompt: input.prompt === undefined ? existing.prompt : input.prompt,
-        enabled: input.enabled === undefined ? existing.enabled : input.enabled,
-        updatedAt: now,
-      })
-      .where(eq(skill.id, existing.id))
-      .returning();
-
-    return rows[0]!;
-  }
+  if (input.description !== undefined) overwrite.description = input.description;
+  if (input.prompt !== undefined) overwrite.prompt = input.prompt;
+  if (input.enabled !== undefined) overwrite.enabled = input.enabled;
 
   const rows = await db
     .insert(skill)
@@ -67,6 +56,7 @@ export async function upsertSkill(input: UpsertSkillInput): Promise<Skill> {
       createdAt: now,
       updatedAt: now,
     })
+    .onConflictDoUpdate({ target: [skill.userId, skill.slug], set: overwrite })
     .returning();
 
   return rows[0]!;

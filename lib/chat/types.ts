@@ -38,4 +38,7 @@ export type SetupStatus = {
   readonly mediaReady: boolean;
   readonly missing: readonly string[];
   readonly rateLimitReady: boolean;
+  // SOCIAL_TOKEN_ENCRYPTION_KEY is a valid 32 byte base64 key, so MCP tokens
+  // and OAuth state can be encrypted before they reach Postgres.
+  readonly secretsReady: boolean;
 };

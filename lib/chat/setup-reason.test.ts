@@ -11,6 +11,7 @@ const ready: SetupStatus = {
   mediaReady: true,
   missing: [],
   rateLimitReady: true,
+  secretsReady: true,
 };
 
 describe("getSetupDisabledReason", () => {
@@ -68,9 +69,15 @@ describe("getSetupDisabledReason", () => {
     );
   });
 
-  it("asks for Upstash last", () => {
-    expect(getSetupDisabledReason({ ...ready, rateLimitReady: false })).toBe(
-      "Provision Upstash Redis before chatting.",
+  it("asks for Upstash fourth", () => {
+    expect(
+      getSetupDisabledReason({ ...ready, rateLimitReady: false, secretsReady: false }),
+    ).toBe("Provision Upstash Redis before chatting.");
+  });
+
+  it("asks for the encryption key last", () => {
+    expect(getSetupDisabledReason({ ...ready, secretsReady: false })).toBe(
+      "Set SOCIAL_TOKEN_ENCRYPTION_KEY before chatting.",
     );
   });
 });
