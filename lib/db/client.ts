@@ -28,7 +28,30 @@ export const db = new Proxy({} as NeonHttpDatabase<typeof schema>, {
   },
 });
 
+// Tables the app cannot run without. A missing one means migrations have not
+// been applied yet.
+export const REQUIRED_TABLES = [
+  "account",
+  "brand",
+  "brand_member",
+  "channel_identity",
+  "chat",
+  "chat_event",
+  "session",
+  "user",
+  "verification",
+] as const;
+
+// Tables are never dropped at runtime, so once the schema is ready it stays
+// ready and later calls skip the query. A false result is not memoized, so
+// running migrations takes effect without a restart.
+let schemaReady = false;
+
 export async function isDatabaseSchemaReady() {
+  if (schemaReady) {
+    return true;
+  }
+
   const url = process.env.DATABASE_URL?.trim();
 
   if (!url) {
@@ -37,35 +60,18 @@ export async function isDatabaseSchemaReady() {
 
   try {
     const sql = neon(url);
-    const rows = (await sql`
-      select
-        to_regclass('public.account') is not null as account_ready,
-        to_regclass('public.chat') is not null as chat_ready,
-        to_regclass('public.chat_event') is not null as chat_event_ready,
-        to_regclass('public.session') is not null as session_ready,
-        to_regclass('public."user"') is not null as user_ready,
-        to_regclass('public.verification') is not null as verification_ready
-    `) as unknown as [
-      {
-        readonly account_ready: boolean;
-        readonly chat_event_ready: boolean;
-        readonly chat_ready: boolean;
-        readonly session_ready: boolean;
-        readonly user_ready: boolean;
-        readonly verification_ready: boolean;
-      },
+    // REQUIRED_TABLES is a fixed list of identifiers, so building the text is
+    // safe. Each name is quoted because "user" is a reserved word.
+    const checks = REQUIRED_TABLES.map(
+      (table) => `to_regclass('public."${table}"') is not null`,
+    ).join(" and ");
+    const rows = (await sql.query(`select ${checks} as ready`)) as unknown as [
+      { readonly ready: boolean },
     ];
-    const result = rows[0];
-    const ready = Boolean(
-      result?.account_ready &&
-        result.chat_ready &&
-        result.chat_event_ready &&
-        result.session_ready &&
-        result.user_ready &&
-        result.verification_ready,
-    );
 
-    return ready;
+    schemaReady = rows[0]?.ready === true;
+
+    return schemaReady;
   } catch {
     return false;
   }

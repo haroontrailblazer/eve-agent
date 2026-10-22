@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { isBrandMember } from "@/lib/db/brands";
 import { db } from "@/lib/db/client";
 import { user } from "@/lib/db/schema";
 
@@ -58,4 +59,27 @@ export async function resolveDbUserId(ctx: unknown): Promise<string | null> {
   }
 
   return null;
+}
+
+// The signed-in user and their brand, for tools that read or write brand data.
+// The brand comes only from the verified auth attributes (set by
+// betterAuthEveAuth), never from tool input, and must still have the user as
+// a member. Returns null when either is missing.
+export async function resolveBrandContext(
+  ctx: unknown,
+): Promise<{ readonly userId: string; readonly brandId: string } | null> {
+  const attributes = extractAuthContext(ctx)?.attributes as Record<string, unknown> | undefined;
+  const brandId = pickString(attributes?.brandId);
+
+  if (!brandId) {
+    return null;
+  }
+
+  const userId = await resolveDbUserId(ctx);
+
+  if (!userId || !(await isBrandMember(brandId, userId))) {
+    return null;
+  }
+
+  return { brandId, userId };
 }

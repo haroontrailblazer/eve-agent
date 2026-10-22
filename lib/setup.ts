@@ -5,6 +5,8 @@ const AUTH_ENV_KEYS = [
   "BETTER_AUTH_SECRET",
   "NEXT_PUBLIC_VERCEL_APP_CLIENT_ID",
   "VERCEL_APP_CLIENT_SECRET",
+  // Without an owner the allowlist is empty and nobody can sign in.
+  "HARPY_OWNER_EMAIL",
 ] as const;
 
 const RATE_LIMIT_ENV_GROUPS = [

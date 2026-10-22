@@ -164,9 +164,74 @@ export const generatedImage = pgTable(
   (table) => [index("idx_generated_image_user").on(table.userId, table.createdAt)],
 );
 
+// One brand per owner. Every product table keys on brand_id; phase 1 creates
+// the owner's brand on first use.
+export const brand = pgTable(
+  "brand",
+  {
+    id: text("id").primaryKey(),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull().default("My brand"),
+    timezone: text("timezone").notNull().default("UTC"),
+    // Local time of day (HH:MM, in `timezone`) for the daily brief.
+    briefLocalTime: text("brief_local_time").notNull().default("07:30"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_brand_owner").on(table.ownerUserId)],
+);
+
+export const brandMember = pgTable(
+  "brand_member",
+  {
+    id: text("id").primaryKey(),
+    brandId: text("brand_id")
+      .notNull()
+      .references(() => brand.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: text("role").$type<"owner" | "member">().notNull().default("member"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_brand_member_brand_user").on(table.brandId, table.userId),
+    index("idx_brand_member_user").on(table.userId),
+  ],
+);
+
+// Links a sender on another channel (WhatsApp wa_id, Slack team:user) to a
+// harpy user and brand, so every channel resolves to the same principal.
+export const channelIdentity = pgTable(
+  "channel_identity",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    brandId: text("brand_id")
+      .notNull()
+      .references(() => brand.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(),
+    externalId: text("external_id").notNull(),
+    phone: text("phone"),
+    bsuid: text("bsuid"),
+    linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_channel_identity_channel_external").on(table.channel, table.externalId),
+    index("idx_channel_identity_user").on(table.userId),
+  ],
+);
+
 export type Chat = typeof chat.$inferSelect;
 export type ChatEvent = typeof chatEvent.$inferSelect;
 export type User = typeof user.$inferSelect;
 export type McpConnection = typeof mcpConnection.$inferSelect;
 export type Skill = typeof skill.$inferSelect;
 export type GeneratedImage = typeof generatedImage.$inferSelect;
+export type Brand = typeof brand.$inferSelect;
+export type BrandMember = typeof brandMember.$inferSelect;
+export type ChannelIdentity = typeof channelIdentity.$inferSelect;

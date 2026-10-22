@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
+import { eq } from "drizzle-orm";
+import { isEmailAllowed } from "@/lib/allowlist";
 import { getAppOrigin, getConfiguredAppHosts } from "@/lib/app-origin";
 import { db } from "@/lib/db/client";
+import { user } from "@/lib/db/schema";
 
 const vercelClientId = process.env.NEXT_PUBLIC_VERCEL_APP_CLIENT_ID?.trim() ?? "";
 const vercelClientSecret = process.env.VERCEL_APP_CLIENT_SECRET?.trim() ?? "";
@@ -19,6 +23,22 @@ const allowedHosts = [
   "*.vercel.app",
   ...getConfiguredAppHosts(),
 ];
+
+// Thrown from the database hooks below. In the OAuth callback Better Auth
+// turns it into a redirect to /auth/error?error=not_allowed.
+function notAllowedError() {
+  return new APIError("FORBIDDEN", { message: "not_allowed" });
+}
+
+async function findUserEmail(userId: string): Promise<string | null> {
+  const rows = await db
+    .select({ email: user.email })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1);
+
+  return rows[0]?.email ?? null;
+}
 
 export const auth = betterAuth({
   baseURL: {
@@ -45,6 +65,34 @@ export const auth = betterAuth({
   },
   onAPIError: {
     errorURL: "/auth/error",
+  },
+  // The allowlist gate. New accounts that aren't allowed are never created;
+  // existing accounts that aren't allowed (any more) never get a new session.
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (newUser) => {
+          if (!isEmailAllowed(newUser.email)) {
+            throw notAllowedError();
+          }
+        },
+      },
+    },
+    session: {
+      create: {
+        before: async (newSession, ctx) => {
+          if (isEmailAllowed(await findUserEmail(newSession.userId))) {
+            return;
+          }
+
+          if (ctx) {
+            throw ctx.redirect("/auth/error?error=not_allowed");
+          }
+
+          throw notAllowedError();
+        },
+      },
+    },
   },
   socialProviders: vercelProviderConfigured
     ? {

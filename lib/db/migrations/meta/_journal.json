@@ -57,6 +57,13 @@
       "when": 1792666325485,
       "tag": "0007_mark_legacy_chats",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792669489772,
+      "tag": "0008_harpy_brands",
+      "breakpoints": true
     }
   ]
 }
