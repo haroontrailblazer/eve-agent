@@ -8,22 +8,9 @@ import type {
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { getMcpConnection, patchMcpOauth, setMcpOauthState } from "@/lib/db/mcp";
 
-// The origin harpy runs on, used to build the OAuth callback URL. Must be stable
-// across the connect step and the callback step so the redirect_uri matches.
-export function getAppOrigin(): string {
-  const configured =
-    process.env.BETTER_AUTH_URL ??
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ??
-    process.env.VERCEL_URL;
-
-  if (!configured) {
-    return "http://localhost:3000";
-  }
-
-  return configured.startsWith("http") ? configured : `https://${configured}`;
-}
-
+// The origin passed in comes from getAppOrigin() in lib/app-origin.ts. It must
+// be stable across the connect step and the callback step so the redirect_uri
+// matches.
 export function mcpCallbackUrl(origin: string): string {
   return `${origin.replace(/\/$/, "")}/api/mcp/oauth/callback`;
 }

@@ -1,10 +1,10 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
+import { appUrl } from "@/lib/app-origin";
 import { saveGeneratedImage } from "@/lib/db/images";
 import { generateOrEditImage, type SourceImage } from "@/lib/image-gen";
 import { errorMessage } from "@/lib/mcp-client";
 import { resolveDbUserId } from "@/lib/mcp-context";
-import { getAppOrigin } from "@/lib/mcp-oauth";
 
 export default defineTool({
   description:
@@ -83,14 +83,14 @@ export default defineTool({
       return { ok: false, message: `Generated the image but couldn't save it: ${errorMessage(error)}` };
     }
 
-    const url = `${getAppOrigin().replace(/\/$/, "")}/api/images/${id}`;
+    const url = appUrl(`api/images/${id}`);
     const altText = input.prompt.replace(/\s+/g, " ").slice(0, 80);
 
     return {
       ok: true,
       imageUrl: url,
       // Relative src so it resolves against the browser origin regardless of how
-      // getAppOrigin() is configured (avoids a wrong absolute host 404ing).
+      // the app origin is configured (avoids a wrong absolute host 404ing).
       markdown: `![${altText}](/api/images/${id})`,
       message: sourceImage
         ? `Edited image ready: ${url}`

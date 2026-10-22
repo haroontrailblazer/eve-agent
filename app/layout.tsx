@@ -6,23 +6,11 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthDisplayPreHydrationHead } from "@/components/auth/auth-display";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { getAppOrigin } from "@/lib/app-origin";
 import "./globals.css";
 
 const title = "harpy";
 const description = "Chat with harpy, your own AI agent.";
-
-function resolveMetadataBase() {
-  const configuredUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ??
-    process.env.VERCEL_URL;
-
-  if (!configuredUrl) {
-    return new URL("http://localhost:3000");
-  }
-
-  return new URL(configuredUrl.startsWith("http") ? configuredUrl : `https://${configuredUrl}`);
-}
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -41,7 +29,7 @@ const orbitron = Orbitron({
 });
 
 export const metadata: Metadata = {
-  metadataBase: resolveMetadataBase(),
+  metadataBase: new URL(getAppOrigin()),
   title,
   description,
   applicationName: title,

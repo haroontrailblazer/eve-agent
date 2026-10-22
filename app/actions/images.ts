@@ -1,7 +1,7 @@
 "use server";
 
+import { appUrl } from "@/lib/app-origin";
 import { saveGeneratedImage } from "@/lib/db/images";
-import { getAppOrigin } from "@/lib/mcp-oauth";
 import { getServerViewer } from "@/lib/session";
 
 // Store an uploaded image (data URL) and return a hosted /api/images/<id> URL.
@@ -39,7 +39,7 @@ export async function uploadImageAction(input: {
       userId: viewer.id,
     });
 
-    return { ok: true, url: `${getAppOrigin().replace(/\/$/, "")}/api/images/${id}` };
+    return { ok: true, url: appUrl(`api/images/${id}`) };
   } catch {
     return { ok: false };
   }

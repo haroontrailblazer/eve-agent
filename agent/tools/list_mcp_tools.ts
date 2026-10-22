@@ -1,9 +1,10 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
+import { getAppOrigin } from "@/lib/app-origin";
 import { getMcpConnection } from "@/lib/db/mcp";
 import { errorMessage, isUnauthorizedError, listMcpTools, type McpAuth } from "@/lib/mcp-client";
 import { resolveDbUserId } from "@/lib/mcp-context";
-import { DbOAuthProvider, getAppOrigin } from "@/lib/mcp-oauth";
+import { DbOAuthProvider } from "@/lib/mcp-oauth";
 
 export default defineTool({
   description:
