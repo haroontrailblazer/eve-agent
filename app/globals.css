@@ -2,7 +2,9 @@
 @import "tw-animate-css";
 @source "../node_modules/streamdown/dist/*.js";
 
-@custom-variant dark (&:where(.dark, .dark *));
+/* `dark:` applies inside .dark, but not inside a .light region nested in it,
+   so the light column on /design stays light when the app is dark. */
+@custom-variant dark (&:where(.dark, .dark *):not(:where(.dark .light, .dark .light *)));
 
 @theme inline {
   --color-background: var(--background);
@@ -268,6 +270,17 @@ html[data-harpy-sidebar="collapsed"] [data-slot="sidebar-container"] {
   .animate-spin,
   .animate-pulse {
     animation: none;
+  }
+
+  /* Every other animation and transition (the sidebar, sheets, dialogs,
+     popovers, menus and tooltips) finishes at once. The duration is tiny
+     rather than zero, so Radix still gets animationend and overlays close. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

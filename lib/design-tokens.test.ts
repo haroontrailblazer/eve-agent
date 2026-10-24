@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { declaresToken, readThemeBlocks } from "@/lib/css-tokens";
+import { declaresToken, readMediaBlocks, readRule, readThemeBlocks } from "@/lib/css-tokens";
 
 const globalsCss = readFileSync(join(process.cwd(), "app", "globals.css"), "utf8");
 const blocks = readThemeBlocks(globalsCss);
@@ -41,6 +41,30 @@ describe("app/globals.css design tokens", () => {
     expect(globalsCss).toContain('@import "tw-animate-css";');
     expect(globalsCss).toContain("@layer base");
   });
+
+  it("stops every animation and transition on every element for reduced motion", () => {
+    const universal = readMediaBlocks(globalsCss, "(prefers-reduced-motion: reduce)")
+      .map((block) => readRule(block, "*, *::before, *::after"))
+      .find((rule) => rule !== "");
+
+    expect(universal).toBeDefined();
+    expect(universal).toMatch(/animation-duration:\s*0\.01ms/);
+    expect(universal).toMatch(/animation-iteration-count:\s*1\b/);
+    expect(universal).toMatch(/transition-duration:\s*0\.01ms/);
+  });
+
+  it("keeps the explicit reduced-motion rules for the shimmer and the logo", () => {
+    const reduced = readMediaBlocks(globalsCss, "(prefers-reduced-motion: reduce)").join("\n");
+
+    expect(reduced).toContain(".shimmer-text");
+    expect(reduced).toContain(".harpy-logo__part");
+  });
+
+  it("keeps dark utilities out of a light region inside a dark app", () => {
+    expect(globalsCss).toContain(
+      "@custom-variant dark (&:where(.dark, .dark *):not(:where(.dark .light, .dark .light *)));",
+    );
+  });
 });
 
 describe("readThemeBlocks", () => {
@@ -78,5 +102,42 @@ describe("readThemeBlocks", () => {
 
   it("returns empty blocks when a block is missing", () => {
     expect(readThemeBlocks("body { color: red; }")).toEqual({ light: "", dark: "", theme: "" });
+  });
+});
+
+describe("readMediaBlocks and readRule", () => {
+  const css = `
+    .a { color: red; }
+    @media (prefers-reduced-motion: reduce) {
+      .a, .b { animation: none; }
+    }
+    /* @media (prefers-reduced-motion: reduce) { .ignored { x: 1; } } */
+    @media (min-width: 40rem) { .c { color: blue; } }
+    @media (prefers-reduced-motion:   reduce) {
+      *,
+      *::before { transition-duration: 0s; }
+    }
+  `;
+
+  it("returns the body of every @media rule with the query, in order", () => {
+    const blocks = readMediaBlocks(css, "(prefers-reduced-motion: reduce)");
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toContain(".a, .b");
+    expect(blocks[1]).toContain("*::before");
+    expect(blocks.join("")).not.toContain(".ignored");
+  });
+
+  it("returns no blocks when the query is missing", () => {
+    expect(readMediaBlocks(css, "(prefers-color-scheme: dark)")).toEqual([]);
+  });
+
+  it("reads the declarations of the rule whose selector list matches", () => {
+    const [first, second] = readMediaBlocks(css, "(prefers-reduced-motion: reduce)");
+
+    expect(readRule(first, ".a, .b")).toContain("animation: none");
+    expect(readRule(second, "*, *::before")).toContain("transition-duration: 0s");
+    expect(readRule(second, "*")).toBe("");
+    expect(readRule(first, ".a")).toBe("");
   });
 });
