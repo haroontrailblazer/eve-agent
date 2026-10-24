@@ -113,7 +113,7 @@ harpy is private. Sign in uses Better Auth with Sign in with Vercel.
 
 ## Media on Blob
 
-Images live on a public Vercel Blob store (`BLOB_READ_WRITE_TOKEN`). Each object has a `media_asset` row (migration `0009_media_assets`) recording its brand.
+Images live on a public Vercel Blob store (`BLOB_READ_WRITE_TOKEN`, optional: chat works without it, images and uploads do not). Each object has a `media_asset` row (migration `0009_media_assets`) recording its brand.
 
 - **Uploads.** The browser uploads supported images directly with `@vercel/blob/client` through `/api/media/upload`, then records them with a server action. Large images never travel in the chat request.
 - **Generated images.** `generate_image` stores results with `saveMediaAsset` under `media/<id>.<ext>`. If the row cannot be written, the Blob object is deleted so nothing is orphaned.

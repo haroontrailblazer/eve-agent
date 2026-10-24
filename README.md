@@ -34,7 +34,7 @@ Then set the harpy variables from `.env.example`:
 HARPY_OWNER_EMAIL=
 HARPY_ALLOWED_EMAILS=
 SOCIAL_TOKEN_ENCRYPTION_KEY=   # openssl rand -base64 32
-BLOB_READ_WRITE_TOKEN=         # a public Vercel Blob store
+BLOB_READ_WRITE_TOKEN=         # a public Vercel Blob store; needed for images and uploads, chat works without it
 AI_GATEWAY_API_KEY=            # local only, or use VERCEL_OIDC_TOKEN from vercel env pull
 ```
 

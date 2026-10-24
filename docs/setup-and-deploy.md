@@ -28,7 +28,7 @@ The commands below use `vercel`. If you do not have a global install, replace `v
 | `HARPY_OWNER_EMAIL` | yes | The owner's email. Always allowed to sign in. |
 | `HARPY_ALLOWED_EMAILS` | no | Extra allowed emails, comma-separated. |
 | `SOCIAL_TOKEN_ENCRYPTION_KEY` | yes | 32 random bytes, base64. Encrypts stored MCP tokens and OAuth state. |
-| `BLOB_READ_WRITE_TOKEN` | yes | Token for a public Vercel Blob store. |
+| `BLOB_READ_WRITE_TOKEN` | for images | Token for a public Vercel Blob store. Required for images and uploads; chat works without it. |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `KV_REST_API_URL`, `KV_REST_API_TOKEN` | yes | Rate limiting. |
 | `AI_GATEWAY_API_KEY` | local only | Model access in local development. Alternatively use `VERCEL_OIDC_TOKEN` from `vercel env pull`. |
 | `BETTER_AUTH_URL` | no | Override the app origin for a custom domain. |
@@ -60,7 +60,7 @@ Warning: rotating or losing this key makes every stored secret unreadable. Users
 
 ## Vercel Blob
 
-Images are stored on a public Vercel Blob store. In the Vercel dashboard, open Storage, create a Blob store with public access, and connect it to the project. That sets `BLOB_READ_WRITE_TOKEN`. Then pull it locally:
+Images are stored on a public Vercel Blob store. In the Vercel dashboard, open Storage, create a Blob store with public access, and connect it to the project. That sets `BLOB_READ_WRITE_TOKEN`, which is needed for images and uploads (chat works without it). Then pull it locally:
 
 ```bash
 vercel env pull .env.local --yes
@@ -258,7 +258,7 @@ pnpm db:migrate
 pnpm dev
 ```
 
-The agent needs model access. Either set `AI_GATEWAY_API_KEY` in `.env.local`, or rely on the `VERCEL_OIDC_TOKEN` that `vercel env pull` writes. It expires, so pull again when model calls start failing with auth errors. Also set `HARPY_OWNER_EMAIL`, `SOCIAL_TOKEN_ENCRYPTION_KEY` and `BLOB_READ_WRITE_TOKEN` in `.env.local`.
+The agent needs model access. Either set `AI_GATEWAY_API_KEY` in `.env.local`, or rely on the `VERCEL_OIDC_TOKEN` that `vercel env pull` writes. It expires, so pull again when model calls start failing with auth errors. Also set `HARPY_OWNER_EMAIL` and `SOCIAL_TOKEN_ENCRYPTION_KEY` in `.env.local`, and `BLOB_READ_WRITE_TOKEN` if you want images and uploads.
 
 Checks:
 
