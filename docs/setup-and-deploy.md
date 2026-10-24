@@ -222,7 +222,7 @@ Phase 1 adds four migrations under `lib/db/migrations`:
 | `0008_harpy_brands` | Adds `brand`, `brand_member` and `channel_identity`. |
 | `0009_media_assets` | Adds `media_asset`. |
 
-They are generated but not applied until you apply them. `0007` rewrites existing chat rows, so back up first: create a Neon branch of the production database (Neon console, Branches, Create branch) and keep it until you have checked the app.
+They are generated but not applied until you apply them.
 
 Apply locally. This uses `DATABASE_URL` from `.env.local`, so check that it does not point at production:
 
@@ -233,11 +233,24 @@ set +a
 pnpm db:migrate
 ```
 
-Apply to production, after the backup:
+### Production: deploy first, then migrate
 
-```bash
-pnpm db:migrate:production
-```
+`0007` marks as legacy only the chats that exist when it runs. If you migrate first, the old deployment keeps creating chats on the old eve until the new build ships, and those chats are not marked. The new build then tries to resume their old events and can crash.
+
+So deploy harpy-v2 first and migrate right after. Until all four migrations are in, the new build shows "Run database migrations" and refuses chat: `REQUIRED_TABLES` in `lib/db/client.ts` names the tables `0008` and `0009` create, and drizzle applies `0006` to `0009` in order. Old code never writes after `0007`, and new code never writes before it.
+
+1. Back up. In the Neon console, open Branches and create a branch of the production database named `pre-harpy-v2`. Keep it until you have checked the app.
+2. Deploy harpy-v2:
+   ```bash
+   vercel --prod
+   ```
+3. Apply the migrations at once:
+   ```bash
+   pnpm db:migrate:production
+   ```
+4. Verify. Reload the app: chat is enabled again, a chat from before the upgrade opens read-only with the older-version notice, and a new chat sends and streams. Then work through the [owner verification checklist](#owner-verification-checklist).
+
+Warning: once `0007` has run, do not roll back to a pre-harpy-v2 deployment without also restoring the `pre-harpy-v2` Neon branch. The old code would write chats on the old eve that are not marked legacy, and harpy-v2 would crash on them when it comes back.
 
 `pnpm db:migrate:production` runs `vercel env run -e production -- pnpm db:migrate`. For local prototyping only, `pnpm db:push` syncs the schema without migrations. Do not use it against production.
 
@@ -332,10 +345,11 @@ Build locally before deploying:
 pnpm build
 ```
 
-Deploy to production only after the production migrations above are applied:
+For the harpy-v2 upgrade, follow [Production: deploy first, then migrate](#production-deploy-first-then-migrate): back up, deploy, then apply the migrations right away.
 
 ```bash
 vercel --prod
+pnpm db:migrate:production
 ```
 
 After changing env vars, storage products, or Connect connectors, redeploy so production uses the newest project configuration.
@@ -387,6 +401,14 @@ These checks need real credentials (Better Auth, Blob token, encryption key, AI 
 14. Notion sign-in: the Connect card shows and the composer is locked with "Connect Notion to continue this turn, or skip it." After OAuth the same turn resumes without sending again. Skip ends the wait and the composer works again.
 15. `ask_question` (temporary): add `agent/tools/ask_question.ts` containing `import { askQuestion } from "eve/tools/ask_question"; export default askQuestion();`. Option buttons and freeform text work and the buttons disable after an answer. Delete the file afterwards.
 16. Legacy chats: a chat from before the upgrade opens read-only with the older-version notice.
+17. Session budget: temporarily lower `SESSION_BUDGET_USD` in `lib/agent-limits.ts` (for example to `0.01`), run locally and send a message. The Continue and Stop prompt shows. Continue carries on with the turn, and Stop ends it and re-enables the composer. Put the value back afterwards.
+18. Back navigation: open a chat with history, visit more than 3 other routes (for example Studio, Calendar, Inbox and Brief), then press back until the chat shows. Its full history shows. A follow-up continues the same session: `select eve_session ->> 'sessionId' from chat where id = '<chat id>'` returns the same id before and after.
+19. New chat, away mid-stream: send a first message from chat home and, while the answer streams, open another page. Come back to the chat. The history shows, the turn finishes or keeps streaming, and the first message is not sent again.
+
+### Deploy order
+
+- The production upgrade followed [deploy first, then migrate](#production-deploy-first-then-migrate): the `pre-harpy-v2` Neon branch exists, harpy-v2 was deployed before `pnpm db:migrate:production` ran, and between the two the app showed "Run database migrations".
+- After the migrations, chat is enabled and a chat from before the upgrade opens read-only.
 
 ### Allowlist
 

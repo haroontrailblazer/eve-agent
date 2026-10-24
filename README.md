@@ -47,7 +47,7 @@ pnpm db:migrate
 pnpm dev
 ```
 
-Production migrations use `pnpm db:migrate:production`. The full guide, including Vercel Blob, the encryption key warning, Vercel Hobby limits and the local eve build workaround, is in [docs/setup-and-deploy.md](docs/setup-and-deploy.md).
+In production, deploy harpy-v2 first and then run `pnpm db:migrate:production` right away (see [deploy first, then migrate](docs/setup-and-deploy.md#production-deploy-first-then-migrate)). The full guide, including Vercel Blob, the encryption key warning, Vercel Hobby limits and the local eve build workaround, is in [docs/setup-and-deploy.md](docs/setup-and-deploy.md).
 
 ## Checks
 

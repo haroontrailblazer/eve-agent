@@ -16,8 +16,8 @@ harpy is a Next.js 16 app on the eve agent framework (eve 0.82). This document e
 | `app/(app)/layout.tsx` | The control-room shell for every page. |
 | `app/(app)/*` | The pages: Studio (`/`), calendar, inbox, brief, brand-voice, channels, chat, settings and design. |
 | `app/_components/app-shell.tsx` | Client shell: sidebar state, chat history, auth modal, shared chat context. |
-| `app/_components/home-chat-page.tsx` | Chat home composer. Creates a chat and navigates into it. |
-| `app/_components/session-chat-page.tsx` | Loads one chat and decides whether to auto-send its first message. |
+| `app/_components/home-chat-page.tsx` | Chat home composer. Hands the first message to a provisional chat and navigates into it. |
+| `app/_components/session-chat-page.tsx` | Creates a provisional chat's row, loads one chat and decides whether to auto-send its first message. |
 | `app/_components/chat/use-harpy-chat.ts` | The chat hook: `useEveAgent` plus persistence and finalization. |
 | `app/_components/chat/chat-session.tsx` | Renders one live chat. |
 | `app/_components/chat/legacy-chat-view.tsx` | Read-only view for legacy chats. |
@@ -28,7 +28,7 @@ harpy is a Next.js 16 app on the eve agent framework (eve 0.82). This document e
 | `app/api/media/upload/route.ts` | Token endpoint for direct browser uploads to Vercel Blob. |
 | `lib/db/schema.ts` | Drizzle tables. |
 | `lib/db/queries.ts` | Chat list, load, event append, session save, finalize, delete. |
-| `lib/chat/*` | Pure chat helpers (event rows, derived view, legacy reducer, auto-send rule). |
+| `lib/chat/*` | Pure chat helpers (event rows, derived view, legacy reducer, chat load, auto-send rule). |
 | `lib/allowlist.ts`, `lib/brand-access.ts` | Who may sign in and which brand they act for. |
 | `lib/media/*` | Blob storage, upload limits, SSRF-safe source image loading. |
 | `lib/crypto/secret-box.ts` | Encryption for stored secrets. |
@@ -67,16 +67,17 @@ useEveAgent({
 
 ### Persistence
 
-- **Events.** `onEvent` buffers each stream event with a local `index` and flushes the batch 300 ms after the stream goes quiet, through `appendChatEventsAction`. A failed batch is kept and retried on the next flush.
+- **Events.** `onEvent` buffers each stream event with a local `index` and flushes the batch 300 ms after the stream goes quiet, through `appendChatEventsAction`. A failed batch is kept and retried on the next flush. The index starts at the chat's `nextEventIndex`, one past the highest saved `event_index` (0 for a new chat), not at the number of saved events, so a gap in the log never makes a new event reuse a taken index.
 - **Dedupe by `meta.id`.** eve stamps every event with `meta.id`. `chat_event.eve_event_id` stores it, and a unique index on `(chat_id, eve_event_id)` makes a replayed event a no-op. `toChatEventRows` keeps the first occurrence of a repeated id. Events with no id (older streams) are stored with a null `eve_event_id`.
 - **Order by `event_index`.** `chat_event.event_index` orders rows when a chat loads. It is a local position in the saved log. It is not an eve stream cursor, and the two must not be mixed up.
 - **Session.** `onSessionChange` fires on every accepted event, so the hook saves the session (`saveChatSessionAction`) only when the session id changes.
-- **Finalize.** `onFinish` flushes pending events and calls `finalizeChatTurnAction`, which moves the chat to the top of the sidebar and clears the pending message. A resume that finds an already settled turn brings no new events, so it does not finalize and does not reorder old chats.
+- **Session.** Saving the session (`saveChatSession`) also clears the chat's pending message, because once a session exists the first message has been sent.
+- **Finalize.** `onFinish` flushes pending events and calls `finalizeChatTurnAction`, which saves the final session cursor and moves the chat to the top of the sidebar. A resume that finds an already settled turn brings no new events, so it does not finalize and does not reorder old chats.
 - On unmount the hook flushes whatever is buffered.
 
 ### First message handoff
 
-Chat home creates the chat row with a pending first message, writes a local handoff marker to `sessionStorage` (plus pending attachments under `harpy-pending-attachments:<chatId>`), and navigates to `/chat/<id>`. `session-chat-page` reads and clears the marker once per chat. `shouldAutoSendPending` (`lib/chat/auto-send.ts`) sends the first message only when all of these hold:
+Chat home does not create the chat row. It writes the first message as a local handoff marker to `sessionStorage` (plus pending attachments under `harpy-pending-attachments:<chatId>`) for a provisional id, and navigates to `/chat/new-<uuid>`. There `session-chat-page` calls `createChatAction`, which creates the row with the pending first message, moves the marker and attachments to the real id, and replaces the URL with `/chat/<id>`. `session-chat-page` then reads and clears the marker once per chat. `shouldAutoSendPending` (`lib/chat/auto-send.ts`) sends the first message only when all of these hold:
 
 - the marker is present in this tab;
 - the chat is not legacy;
@@ -87,11 +88,13 @@ Server data alone is never enough. A stale copy of the page (router cache, back 
 
 ### Refresh and resume
 
+`session-chat-page` builds the chat only from a no-store fetch of `/api/chats/:id`, never from the page's server render. On back and forward Next can reuse the first visit's cached render, which has no session and no events, and a chat built from it would start a second eve session. `reduceChatLoad` (`lib/chat/chat-load.ts`) settles on the first fetched chat, once. If the fetch fails, the composer says so and nothing is built.
+
 On refresh, the page loads the chat's saved events and session. If a turn was still running, `resume: true` reattaches to the stream and only new events arrive. Because events are deduped by `meta.id`, nothing is duplicated. Refreshing after a turn finished shows history and sends nothing.
 
 ### Authorization
 
-When a connection (for example Notion) needs sign-in, eve emits `authorization.required` and the conversation shows an authorization card. The composer is locked until the user connects or skips. After OAuth, the same turn resumes without sending again. Skip goes through `respond`, like any other input response. The app never parses assistant text to detect auth requirements.
+When a connection (for example Notion) needs sign-in, eve emits `authorization.required` and the conversation shows an authorization card. The composer is locked until the user connects or skips. After OAuth, the same turn resumes without sending again. Skip calls `cancel()`, which stops the waiting turn; it does not go through `respond`. The app never parses assistant text to detect auth requirements.
 
 ## Legacy Chats
 
@@ -117,7 +120,7 @@ Images live on a public Vercel Blob store (`BLOB_READ_WRITE_TOKEN`, optional: ch
 
 - **Uploads.** The browser uploads supported images directly with `@vercel/blob/client` through `/api/media/upload`, then records them with a server action. Large images never travel in the chat request.
 - **Generated images.** `generate_image` stores results with `saveMediaAsset` under `media/<id>.<ext>`. If the row cannot be written, the Blob object is deleted so nothing is orphaned.
-- **Source images.** When a tool loads an image from a URL (for editing), `lib/media/load-source-image.ts` and `lib/media/source-url.ts` reject private and internal addresses first, to prevent SSRF.
+- **Source images.** When a tool loads an image from a URL (for editing), `lib/media/source-url.ts` checks it against an allowlist first, to prevent SSRF. Only two kinds of URL pass: harpy's own `/api/images/<uuid>` route and public Vercel Blob URLs over https on the default port. Everything else is refused, including other hosts, internal addresses, URLs with credentials, and `data:` and `file:` URLs. `lib/media/load-source-image.ts` loads only what passes, and refuses redirects.
 - **Limits.** `lib/media/limits.ts` is shared by the composer, the upload route and the loaders: images up to 20 MB, other attachments up to 3 MB inline, 50 generated images per day.
 - Older images from before Blob are still served by `/api/images/[id]`.
 
@@ -125,7 +128,7 @@ Images live on a public Vercel Blob store (`BLOB_READ_WRITE_TOKEN`, optional: ch
 
 MCP access tokens and OAuth state are encrypted with `SOCIAL_TOKEN_ENCRYPTION_KEY` (32 random bytes, base64) before they reach Postgres. `lib/crypto/secret-box.ts` does the encryption. `lib/db/mcp-secrets.ts` stores the OAuth state as `{ box }`, and `lib/db/mcp.ts` decrypts for the caller. Rows written before encryption still read as plaintext.
 
-If the key is rotated or lost, stored secrets cannot be decrypted and users must reconnect their MCP servers.
+If the key is rotated or lost, stored secrets cannot be decrypted. `lib/db/mcp.ts` then returns those fields as null with `secretsUnreadable` set, never the ciphertext, so the rest of the list still loads. Channels marks the connection "Needs reconnect", and connecting it again clears the unreadable secrets and starts fresh. A read never clears anything, so setting the old key back restores a connection that has not been reconnected. Anything stored with the `v1:` box prefix is treated as a box: a damaged one fails to open instead of passing for a legacy plaintext secret.
 
 ## Shell and Sidebar
 
