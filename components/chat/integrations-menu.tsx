@@ -1,8 +1,7 @@
 "use client";
 
-import type { ComponentType } from "react";
 import { HammerIcon } from "lucide-react";
-import { LinearIcon, NotionIcon, SentryIcon } from "@/components/icons";
+import { PlatformIcon } from "@/components/harpy/platform-icon";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,18 +11,9 @@ import {
 import { Switch } from "@/components/ui/switch";
 import type { EnabledConnections } from "@/app/_components/chat-shell-context";
 import type { SetupStatus } from "@/lib/chat/types";
+import { PLATFORMS } from "@/lib/platforms";
 
-type ConnectionItem = {
-  readonly key: keyof EnabledConnections;
-  readonly label: string;
-  readonly Icon: ComponentType<{ readonly className?: string }>;
-};
-
-const CONNECTION_ITEMS: readonly ConnectionItem[] = [
-  { key: "notion", label: "Notion", Icon: NotionIcon },
-  { key: "linear", label: "Linear", Icon: LinearIcon },
-  { key: "sentry", label: "Sentry", Icon: SentryIcon },
-];
+const CONNECTION_KEYS = ["notion", "linear", "sentry"] as const satisfies readonly (keyof EnabledConnections)[];
 
 export function IntegrationsMenu({
   enabledConnections,
@@ -55,7 +45,8 @@ export function IntegrationsMenu({
         className="w-48 rounded-md border-border bg-popover p-1"
         sideOffset={4}
       >
-        {CONNECTION_ITEMS.map(({ Icon, key, label }) => {
+        {CONNECTION_KEYS.map((key) => {
+          const { label } = PLATFORMS[key];
           const enabled = enabledConnections[key];
 
           return (
@@ -74,7 +65,7 @@ export function IntegrationsMenu({
               role="menuitemcheckbox"
             >
               <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-foreground">
-                <Icon className="size-4.5 text-foreground" />
+                <PlatformIcon className="size-4.5 text-foreground" platform={key} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm text-foreground">{label}</span>

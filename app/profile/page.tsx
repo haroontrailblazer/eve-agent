@@ -9,7 +9,7 @@ import {
   NotionIcon,
   SentryIcon,
   ThreadsIcon,
-  XIcon,
+  XBrandIcon,
 } from "@/components/icons";
 import { listMcpConnections } from "@/lib/db/mcp";
 import { listSkills } from "@/lib/db/skills";
@@ -30,7 +30,7 @@ const PLATFORM_META: Record<string, PlatformMeta> = {
   notion: { Icon: NotionIcon, label: "Notion" },
   sentry: { Icon: SentryIcon, label: "Sentry" },
   threads: { Icon: ThreadsIcon, label: "Threads" },
-  x: { Icon: XIcon, label: "X" },
+  x: { Icon: XBrandIcon, label: "X" },
 };
 
 function metaFor(platform: string): PlatformMeta {

@@ -1,3 +1,4 @@
+import { PLATFORMS } from "@/lib/platforms";
 import type { SkillSummary } from "@/lib/skills/catalog";
 
 export type ConnectionKey = "linear" | "notion" | "sentry";
@@ -5,9 +6,9 @@ export type ConnectionKey = "linear" | "notion" | "sentry";
 export type EnabledConnections = Readonly<Record<ConnectionKey, boolean>>;
 
 export const CONNECTION_LABELS: Readonly<Record<ConnectionKey, string>> = {
-  linear: "Linear",
-  notion: "Notion",
-  sentry: "Sentry",
+  linear: PLATFORMS.linear.label,
+  notion: PLATFORMS.notion.label,
+  sentry: PLATFORMS.sentry.label,
 };
 
 export function createConnectionClientContext(enabledConnections: EnabledConnections): string {
