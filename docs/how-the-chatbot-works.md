@@ -1,909 +1,191 @@
 # How the Chatbot Works
 
-This document explains the eve chat template end to end. It is written for
-future maintainers who need to understand why the app is shaped this way, where
-state lives, how messages stream, and how to safely change the chat experience.
-
-The short version: this is not a generic stateless chat UI. The browser talks to
-an eve agent through same-origin `/eve/v1/*` routes, persists eve stream events
-to Postgres as they arrive, keeps an eve session cursor so interrupted streams
-can resume, and uses a static Next.js shell so the sidebar and composer do not
-thrash during route navigation.
+harpy is a Next.js 16 app on the eve agent framework (eve 0.82). This document explains how the web chat is put together, how it persists and resumes, who may sign in, and where media and secrets live. Read the guides in `node_modules/eve/docs/` before changing anything that touches eve.
 
 ## Main Pieces
 
-The template has four major layers:
-
-1. The eve agent layer in `agent/`
-2. The Next.js shell and page layer in `app/`
-3. The chat UI components in `components/chat/`
-4. The persistence, auth, setup, and rate-limit layer in `lib/`
-
-Important files:
-
-| File | Purpose |
+| Path | Purpose |
 | --- | --- |
-| `agent/agent.ts` | Defines the eve agent and model. |
-| `agent/channels/eve.ts` | Configures the eve web channel and auth adapters. |
-| `agent/channels/slack.ts` | Configures the Slack channel route and Vercel Connect credentials. |
-| `agent/connections/notion.ts` | Defines the Notion MCP connection through Vercel Connect. |
-| `agent/connections/linear.ts` | Defines the Linear MCP connection through Vercel Connect. |
-| `agent/connections/sentry.ts` | Defines the Sentry MCP connection through Vercel Connect. |
-| `next.config.ts` | Wraps the app with `withEve(nextConfig)`, which mounts the `/eve/v1/*` routes. |
-| `app/(chat)/layout.tsx` | Renders the static chat shell immediately, then streams viewer/setup/sidebar data through Suspense. |
-| `app/(chat)/page.tsx` | Root chat screen. Creates a new chat row and navigates into `/chat/[id]`. |
-| `app/(chat)/chat/[id]/page.tsx` | Session route. Streams the active chat data into the client shell. |
-| `app/_components/agent-chat-shell.tsx` | Client shell for sidebar state, history pagination, auth modal, and shared chat context. |
-| `app/_components/home-chat-page.tsx` | Root-page composer and logo experience. |
-| `app/_components/session-chat-page.tsx` | Session-page composer, active chat sync, and controller wiring. |
-| `app/_components/agent-chat.tsx` | The eve client bridge: sending, streaming, persistence, resume, pending auth, and display state. |
-| `components/chat/composer.tsx` | The controlled chat input. |
-| `components/chat/message.tsx` | Renders eve messages, markdown, reasoning, tools, and input requests. |
-| `components/chat/sidebar.tsx` | Paginated chat history sidebar. |
-| `components/chat/integrations-menu.tsx` | Per-turn connection toggle UI. |
-| `app/actions/chat.ts` | Server actions for chat creation, persistence, pending state, skip auth, and rate checks. |
-| `app/api/chats/route.ts` | Paginated chat history endpoint. |
-| `lib/db/schema.ts` | Drizzle tables for Better Auth, chats, and chat events. |
-| `lib/db/queries.ts` | Chat list, chat load, event save, snapshot save, and delete queries. |
-| `lib/setup.ts` | Setup readiness checks for Neon, migrations, auth, and Redis. |
-| `lib/auth.ts` | Better Auth configuration with Sign in with Vercel. |
-| `lib/eve-auth.ts` | Converts a Better Auth viewer into an eve channel principal. |
-| `lib/rate-limit.ts` | Upstash Redis based fixed-window rate limiting. |
+| `agent/agent.ts` | Defines the eve agent (model, reasoning, session budget). |
+| `agent/instructions.md` | The harpy system prompt. |
+| `agent/channels/eve.ts` | The eve web channel and its auth adapters. |
+| `agent/channels/slack.ts` | The Slack channel through Vercel Connect. |
+| `agent/connections/*.ts` | Vercel Connect MCP connections (Notion, Linear, Sentry, DeepWiki). |
+| `agent/tools/*.ts` | Local tools, including `generate_image` and the MCP and skill tools. |
+| `next.config.ts` | Wraps the app with `withEve(nextConfig)`, which mounts the `/eve/v1/*` routes. It also redirects `/profile` to `/settings`. |
+| `app/(app)/layout.tsx` | The control-room shell for every page. |
+| `app/(app)/*` | The pages: Studio (`/`), calendar, inbox, brief, brand-voice, channels, chat, settings and design. |
+| `app/_components/app-shell.tsx` | Client shell: sidebar state, chat history, auth modal, shared chat context. |
+| `app/_components/home-chat-page.tsx` | Chat home composer. Creates a chat and navigates into it. |
+| `app/_components/session-chat-page.tsx` | Loads one chat and decides whether to auto-send its first message. |
+| `app/_components/chat/use-harpy-chat.ts` | The chat hook: `useEveAgent` plus persistence and finalization. |
+| `app/_components/chat/chat-session.tsx` | Renders one live chat. |
+| `app/_components/chat/legacy-chat-view.tsx` | Read-only view for legacy chats. |
+| `components/chat/*` | Messages, markdown, composer, authorization card, integrations menu. |
+| `components/ui/*` | shadcn primitives. |
+| `components/harpy/*` | harpy domain components (page header, empty state, platform chip, draft card and similar). |
+| `app/actions/chat.ts` | Server actions for chat creation, event persistence, session save, finalize, rate checks. |
+| `app/api/media/upload/route.ts` | Token endpoint for direct browser uploads to Vercel Blob. |
+| `lib/db/schema.ts` | Drizzle tables. |
+| `lib/db/queries.ts` | Chat list, load, event append, session save, finalize, delete. |
+| `lib/chat/*` | Pure chat helpers (event rows, derived view, legacy reducer, auto-send rule). |
+| `lib/allowlist.ts`, `lib/brand-access.ts` | Who may sign in and which brand they act for. |
+| `lib/media/*` | Blob storage, upload limits, SSRF-safe source image loading. |
+| `lib/crypto/secret-box.ts` | Encryption for stored secrets. |
+| `lib/app-origin.ts` | The single place that decides the app origin. |
 
-## Runtime Model
+## The Chat Hook
 
-There are two related but separate concepts:
-
-1. A **local app chat**, represented by a row in the `chat` table.
-2. An **eve session**, represented by eve's `SessionState` and remote session
-   stream.
-
-The app chat gives the user a stable URL such as `/chat/abc`, a sidebar title,
-and persisted event history. The eve session is the durable conversation state
-that eve uses to continue, wait for authorization, resume streams, and accept
-follow-up input.
-
-The app stores eve session state on the chat row:
+The browser talks to eve through same-origin routes mounted by `withEve`: `POST /eve/v1/session`, `POST /eve/v1/session/:sessionId` and `GET /eve/v1/session/:sessionId/stream`. `useHarpyChat` wraps eve's `useEveAgent` from `eve/react`:
 
 ```ts
-chat.eveSession: SessionState | null
-```
-
-The app stores eve stream events in ordered rows:
-
-```ts
-chat_event.eventIndex: number
-chat_event.event: HandleMessageStreamEvent
-```
-
-Those two pieces are intentionally separate. The `eveSession.streamIndex` tells
-eve where to resume from in the remote session stream. The local
-`chat_event.eventIndex` tells Postgres how to order the event log for rendering.
-Do not treat those indices as interchangeable.
-
-## Rendering Strategy
-
-The app uses Next.js App Router with Cache Components enabled. The chat shell is
-designed to render immediately, while dynamic data streams in behind hidden
-Suspense boundaries.
-
-### Shell First
-
-`app/(chat)/layout.tsx` renders this immediately:
-
-```tsx
-<AgentChatShell
-  initialChats={[]}
-  initialNextCursor={null}
-  setupStatus={getInitialSetupStatus()}
-  viewer={null}
->
-  {children}
-  <Suspense fallback={null}>
-    <ResolvedChatBootstrap />
-  </Suspense>
-</AgentChatShell>
-```
-
-The shell can paint the sidebar frame, top-right auth buttons, and route body
-without waiting for the database or auth session. Then `ResolvedChatBootstrap`
-fetches:
-
-- setup readiness from `getSetupStatus()`
-- the Better Auth viewer from `getServerViewer(setupStatus)`
-- the first page of chat history from `listChatsPageByUser(viewer.id)`
-
-It passes that data through `AgentChatBootstrapSync`, which dispatches a browser
-event. `AgentChatShell` listens for that event and merges the real viewer,
-setup status, and sidebar history into client state.
-
-This pattern avoids a blocking route, which would delay the entire page.
-
-### Session Route Data
-
-`app/(chat)/chat/[id]/page.tsx` uses the same idea. It renders the session page
-shell first:
-
-```tsx
-<SessionChatPage chatId={chatId}>
-  <Suspense fallback={null}>
-    <ExistingChat chatId={chatId} />
-  </Suspense>
-</SessionChatPage>
-```
-
-`ExistingChat` loads the active chat from Postgres and emits it through
-`AgentChatRouteSync`. `SessionChatPage` listens for that sync event and then
-passes the loaded `ActiveChat` into `AgentChatSession`.
-
-This is why the top bar, sidebar, and composer can stay stable while the chat
-body itself waits for data.
-
-## Sidebar State And Pagination
-
-The sidebar is owned by `AgentChatShell`.
-
-State it owns:
-
-- desktop sidebar open or closed
-- mobile sidebar drawer open or closed
-- current history page
-- next cursor
-- active chat id
-- viewer
-- setup status
-- auth modal state
-- enabled connection toggles
-
-The desktop open/closed state is persisted in a cookie:
-
-```ts
-SIDEBAR_COOKIE_NAME = "eve-chat-sidebar"
-```
-
-`SidebarCookieScript` writes an early document hint before React hydrates. That
-prevents the sidebar from opening for a frame and then collapsing.
-
-Chat history is paginated. The first page is loaded by `ResolvedChatBootstrap`.
-More pages are loaded from:
-
-```txt
-GET /api/chats?cursor=<cursor>
-```
-
-`listChatsPageByUser` orders by `updatedAt desc, id desc` and fetches
-`CHAT_HISTORY_PAGE_SIZE + 1`, where the page size is currently 20. The extra
-row determines whether there is a next cursor.
-
-The cursor is encoded as:
-
-```txt
-<updatedAt ISO string>::<chat id>
-```
-
-The sidebar uses an intersection observer sentinel at the bottom of the list.
-When it becomes visible, `AgentChatShell.loadMoreChats()` fetches the next page
-and appends only chats that are not already present.
-
-Creating, sending to, or deleting a chat updates the sidebar optimistically
-through:
-
-- `touchChat(chat)`
-- `removeChat(chatId)`
-- `updateChatTitle(chatId, title)`
-
-## Root Page Flow
-
-The root route is `app/(chat)/page.tsx`, rendered by `HomeChatPage`.
-
-The root page is the "start a new chat" experience. It has:
-
-- the eve logo
-- a centered composer
-- footer links
-- the shared sidebar and top auth controls from `AgentChatShell`
-
-When the user submits the first message:
-
-1. The input is trimmed.
-2. If setup is incomplete, an error toast explains what is missing.
-3. If the user is not signed in, `requestSignIn(message)` opens the auth modal
-   and saves the draft in `sessionStorage`.
-4. If the user is signed in, `createChatAction({ pendingUserMessage: message })`
-   creates a chat row.
-5. The chat title is derived from the first user message with
-   `createFallbackTitle`.
-6. The new chat is inserted into the sidebar with `touchChat(created)`.
-7. The app navigates to `/chat/<id>`.
-
-The root page does not call eve directly. It creates the app chat first and
-lets the session route consume the pending message once the eve client is ready.
-
-That matters because a chat URL should exist before the first response starts
-streaming.
-
-## Session Page Flow
-
-The session route is rendered by `SessionChatPage`.
-
-`SessionChatPage` owns:
-
-- the loaded `ActiveChat`
-- the controlled composer draft
-- a ref to the `AgentChatController`
-- loading/error UI for the route
-- the pending user message loaded from the database
-
-The `AgentChatController` is provided by `AgentChatSession`:
-
-```ts
-type AgentChatController = {
-  reset: () => void;
-  sendMessage: (text: string, draftHandlers: DraftHandlers) => Promise<void>;
-  stop: () => void;
-};
-```
-
-The session composer calls `controller.sendMessage(text, handlers)`.
-
-If the route loaded a `pendingUserMessage`, `SessionChatPage` auto-consumes it
-once:
-
-- the chat has loaded
-- the controller exists
-- the controller is not busy
-- the controller is not disabled by setup or pending authorization
-
-This is how the first message from the root page actually gets sent to eve after
-navigation.
-
-## eve Client Bridge
-
-Most of the chat logic lives in `app/_components/agent-chat.tsx`.
-
-The core hook is:
-
-```tsx
-const agent = useEveAgent({
-  initialEvents: activeChat?.events ?? [],
-  session: persistedSessionRef.current,
-  onEvent: persistStreamEvent,
-  onFinish: (snapshot) => {
-    void persistSnapshot(snapshot);
-  },
+useEveAgent({
+  followIdle: false,
+  initialEvents: chat.events,
+  initialSession: chat.session,
+  resume: chat.session !== undefined,
+  onEvent, onSessionChange, onFinish, onError,
 });
 ```
 
-`useEveAgent` handles reducing eve stream events into renderable chat messages.
-The template wraps it with persistence and resume logic.
+- `initialEvents` and `initialSession` come from Postgres. `useEveAgent` reduces the saved events into messages and, because `resume` is true, reattaches to the live stream if a turn was still running.
+- `useEveAgent` reads its options once, so the chat component is mounted with `key={chat.id}`.
+- `followIdle: false` keeps the stream from staying attached after a turn settles. This matters on Vercel Hobby, where the Workflow events budget is limited (see [Vercel Hobby notes](setup-and-deploy.md#vercel-hobby-notes)).
+- There is no custom `ClientSession`, no continuation token and no synthetic events. The hook uses only what eve 0.82 provides.
 
-### Persisted Client Session
+### Sending
 
-The browser session object is created by `createPersistedClientSession`.
+`send(text, attachments)` runs these steps in order:
 
-It exposes:
+1. Route every attachment through `lib/media/attachment-policy.ts`. Supported images (png, jpeg, webp, gif up to 20 MB) go to Blob. Other files stay inline as data URLs up to 3 MB. A refused file leaves no trace.
+2. Check the send rate limit (`checkSendLimitAction`).
+3. Mark the pending message on the chat row, which bumps the chat in the sidebar and titles a new chat from its first message.
+4. Upload Blob-bound images straight from the browser through `/api/media/upload`, then record them (`recordUploadedMediaAction`). The agent gets the hosted URL, because a tool cannot read attached bytes.
+5. Call `useEveAgent`'s `send` with the message content and a per-turn `clientContext` built from the connection toggles, hosted image URLs and any `/skill` the user picked. If the chat is already busy the turn policy is `steer`.
 
-- `send(input)`
-- `stream(options)`
-- `applyLocalEvents(events)`
-- `setState(nextSession)`
-- `state`
+`respond` answers authorization and input requests. `cancel` stops the turn.
 
-When `send(input)` is called:
+### Persistence
 
-1. It normalizes the input.
-2. It posts to `/eve/v1/session` for a new eve session, or
-   `/eve/v1/session/:sessionId` for a continuation.
-3. It reads the `x-eve-session-id` response header.
-4. It updates the local `SessionState`.
-5. It saves that session state to the chat row.
-6. It returns a browser-compatible message response whose async iterator reads
-   `/eve/v1/session/:sessionId/stream`.
+- **Events.** `onEvent` buffers each stream event with a local `index` and flushes the batch 300 ms after the stream goes quiet, through `appendChatEventsAction`. A failed batch is kept and retried on the next flush.
+- **Dedupe by `meta.id`.** eve stamps every event with `meta.id`. `chat_event.eve_event_id` stores it, and a unique index on `(chat_id, eve_event_id)` makes a replayed event a no-op. `toChatEventRows` keeps the first occurrence of a repeated id. Events with no id (older streams) are stored with a null `eve_event_id`.
+- **Order by `event_index`.** `chat_event.event_index` orders rows when a chat loads. It is a local position in the saved log. It is not an eve stream cursor, and the two must not be mixed up.
+- **Session.** `onSessionChange` fires on every accepted event, so the hook saves the session (`saveChatSessionAction`) only when the session id changes.
+- **Finalize.** `onFinish` flushes pending events and calls `finalizeChatTurnAction`, which moves the chat to the top of the sidebar and clears the pending message. A resume that finds an already settled turn brings no new events, so it does not finalize and does not reorder old chats.
+- On unmount the hook flushes whatever is buffered.
 
-The app never talks directly to a third-party model endpoint. It talks to eve's
-same-origin session API, which is mounted by `withEve(nextConfig)`.
+### First message handoff
 
-### Streaming
+Chat home creates the chat row with a pending first message, writes a local handoff marker to `sessionStorage` (plus pending attachments under `harpy-pending-attachments:<chatId>`), and navigates to `/chat/<id>`. `session-chat-page` reads and clears the marker once per chat. `shouldAutoSendPending` (`lib/chat/auto-send.ts`) sends the first message only when all of these hold:
 
-The stream reader is `streamSessionEvents`.
+- the marker is present in this tab;
+- the chat is not legacy;
+- the chat has no eve session yet;
+- the pending message is not empty.
 
-It opens:
+Server data alone is never enough. A stale copy of the page (router cache, back and forward) still shows a pending message with no session, and sending it again would start a second eve session.
 
-```txt
-GET /eve/v1/session/:sessionId/stream?startIndex=<n>
-```
+### Refresh and resume
 
-Then it reads newline-delimited JSON events.
+On refresh, the page loads the chat's saved events and session. If a turn was still running, `resume: true` reattaches to the stream and only new events arrive. Because events are deduped by `meta.id`, nothing is duplicated. Refreshing after a turn finished shows history and sends nothing.
 
-For every event:
+### Authorization
 
-1. Push it into the current stream buffer.
-2. Increment the next remote stream index.
-3. Yield it to `useEveAgent`.
-4. Stop if the event settles the turn.
+When a connection (for example Notion) needs sign-in, eve emits `authorization.required` and the conversation shows an authorization card. The composer is locked until the user connects or skips. After OAuth, the same turn resumes without sending again. Skip goes through `respond`, like any other input response. The app never parses assistant text to detect auth requirements.
 
-A turn is considered settled when `lib/chat/events.ts` sees one of:
+## Legacy Chats
 
-```ts
-session.completed
-session.failed
-session.waiting
-```
+Chats created before the eve 0.82 upgrade stored events in a format that may not reduce cleanly. Migration `0006_chat_eve_082` adds `chat.legacy` and `chat_event.eve_event_id`. Migration `0007_mark_legacy_chats` flags every existing chat that has a session or any events, and clears their `eve_session` and pending message.
 
-The stream reader retries a few times for transient stream-open failures:
+A legacy chat opens read-only in `legacy-chat-view.tsx`, with a notice that it was started on an older version. `reduceLegacyEvents` folds the saved events into messages and returns `null` instead of throwing if they no longer reduce. Legacy chats never send and never auto-send.
 
-- 404
-- 409
-- 425
-- 500
-- 502
-- 503
-- 504
+## Auth, Allowlist and Brands
 
-It also tolerates stream disconnects by reconnecting from the next unread stream
-index.
+harpy is private. Sign in uses Better Auth with Sign in with Vercel.
 
-When the async iterator exits, it calls `onFinalize(events)`, which advances the
-browser session state using the events that were actually observed.
+- `HARPY_OWNER_EMAIL` is always allowed. `HARPY_ALLOWED_EMAILS` adds more people as a comma-separated list. Both are trimmed and lowercased (`lib/allowlist.ts`).
+- `lib/auth.ts` gates account creation and session creation on `isEmailAllowed`, so an email that is not allowed never gets an account.
+- `lib/eve-auth.ts` converts a Better Auth session into an eve principal and throws a forbidden error when the email is not allowed. The principal carries `attributes.brandId`, `channel: "web"`, `email` and `name`.
+- Tools never accept `brandId` or any tenant id as input. They read the brand from the verified `auth.attributes`.
+- Migration `0008_harpy_brands` adds `brand`, `brand_member` and `channel_identity`. `lib/brand-access.ts` finds the viewer's brand. The owner's brand is created on first sign-in. Other allowed emails join it as members only after the owner has signed in once.
+- `lib/app-origin.ts` is the single source of the app origin, used by auth, metadata, the MCP OAuth `redirect_uri` and hosted image URLs. Order: `BETTER_AUTH_URL`, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_URL`, `http://localhost:3000`.
+- `agent/channels/eve.ts` allows the Better Auth adapter, `localDev()` and `vercelOidc()`.
 
-## Sending A Message
+## Media on Blob
 
-Follow-up messages are sent by `AgentChatSession.sendMessage`.
+Images live on a public Vercel Blob store (`BLOB_READ_WRITE_TOKEN`). Each object has a `media_asset` row (migration `0009_media_assets`) recording its brand.
 
-The intended order is:
+- **Uploads.** The browser uploads supported images directly with `@vercel/blob/client` through `/api/media/upload`, then records them with a server action. Large images never travel in the chat request.
+- **Generated images.** `generate_image` stores results with `saveMediaAsset` under `media/<id>.<ext>`. If the row cannot be written, the Blob object is deleted so nothing is orphaned.
+- **Source images.** When a tool loads an image from a URL (for editing), `lib/media/load-source-image.ts` and `lib/media/source-url.ts` reject private and internal addresses first, to prevent SSRF.
+- **Limits.** `lib/media/limits.ts` is shared by the composer, the upload route and the loaders: images up to 20 MB, other attachments up to 3 MB inline, 50 generated images per day.
+- Older images from before Blob are still served by `/api/images/[id]`.
 
-1. Ignore empty input.
-2. Ignore if the session is already busy.
-3. If eve is waiting on connection authorization, do not send regular user
-   text. Show a helpful error instead.
-4. Render an optimistic user bubble immediately when possible.
-5. Run `prepareSend(message)`.
-6. Mark the chat row with `pendingUserMessage`.
-7. Call `agent.send({ message, clientContext })`.
-8. Let `useEveAgent`, `onEvent`, and `onFinish` handle streaming and
-   persistence.
+## Secrets at Rest
 
-`prepareSend` does the things that must happen before talking to eve:
+MCP access tokens and OAuth state are encrypted with `SOCIAL_TOKEN_ENCRYPTION_KEY` (32 random bytes, base64) before they reach Postgres. `lib/crypto/secret-box.ts` does the encryption. `lib/db/mcp-secrets.ts` stores the OAuth state as `{ box }`, and `lib/db/mcp.ts` decrypts for the caller. Rows written before encryption still read as plaintext.
 
-- verify setup is ready
-- request sign-in if there is no viewer
-- check Redis rate limits
-- create a chat row if one does not exist yet
-- navigate to the new chat URL when necessary
+If the key is rotated or lost, stored secrets cannot be decrypted and users must reconnect their MCP servers.
 
-The optimistic user bubble is separate from persisted eve events. It is created
-with `createPendingUserMessage`. Once the real eve message appears in the
-reduced message list, `hasLatestUserMessage` clears the local pending bubble.
+## Shell and Sidebar
 
-This keeps the UI feeling immediate while still letting eve produce the
-canonical event log.
+The shell is the control-room layout in `app-shell.tsx` with the shadcn sidebar (`components/ui/sidebar.tsx`). Sections are defined in `lib/nav.ts`: Studio, Calendar, Inbox, Brief, Brand voice, Channels, Chat and Settings. `/profile` redirects to `/settings`. `/design` is the reference page for every token and component in light and dark mode.
 
-## Persistence Model
+Two sidebar cookies exist, and only one matters:
 
-The app persists at two moments:
+- `harpy-sidebar` (`lib/sidebar-hint.ts`) is the one harpy uses. The shell layout renders statically, so the server cannot read cookies. A script in `<head>` reads `harpy-sidebar` before first paint and sets `html[data-harpy-sidebar="collapsed"]`, and CSS in `app/globals.css` collapses the desktop sidebar from that attribute. `AppShell` then reads the same cookie into React state and writes it on every toggle.
+- `sidebar_state` is written by the shadcn `SidebarProvider`, but `AppShell` renders it as a controlled component (`open` and `onOpenChange`) and nothing in harpy reads `sidebar_state`. Ignore it.
 
-1. As each stream event arrives
-2. When the final snapshot is available
+## Theme and Design Tokens
 
-### Event-By-Event Persistence
-
-`persistStreamEvent(event)` writes each event through:
-
-```ts
-appendChatEventAction({
-  chatId,
-  event,
-  eventIndex,
-});
-```
-
-`eventIndex` is a local monotonic counter for the current chat. The database has
-a unique index on `(chatId, eventIndex)`, and writes use conflict updates so
-retrying a write can replace the same slot.
-
-This event-by-event persistence is what makes refresh/resume possible even if
-the browser closes mid-turn.
-
-### Snapshot Persistence
-
-When `useEveAgent` finishes a turn, it calls `onFinish(snapshot)`.
-
-The snapshot includes:
-
-- the full reduced event list known by eve React
-- the current eve `SessionState`
-
-The template calls `saveChatSnapshotAction({ chatId, events, session })`.
-
-`saveChatSnapshot` upserts each event by index, deletes any events past the new
-snapshot length, saves the eve session state, clears `pendingUserMessage`, and
-updates the chat timestamp.
-
-### Why Snapshot Merging Exists
-
-There are local events that may not come from the remote stream, especially
-locally synthesized authorization skip events. There are also cases where the
-snapshot returned by the hook starts after some initial events that the app
-already loaded from Postgres.
-
-To avoid losing or duplicating history, `persistSnapshot` applies:
-
-- `preserveKnownInitialEvents(snapshot.events, knownInitialEvents)`
-- `mergeLocalEvents(snapshotEvents, localEvents)`
-- `advanceSessionWithLocalEvents(snapshot.session, localEvents)`
-
-`preserveKnownInitialEvents` is prefix-aware. If the snapshot and known event log
-share a prefix, it preserves the right continuation instead of blindly
-concatenating arrays.
-
-Event comparison uses `areEqualJsonValues`, not `JSON.stringify`, so JSON object
-key order does not cause false mismatches.
-
-## Pending Message Recovery
-
-`pendingUserMessage` exists for interrupted first sends and interrupted
-follow-up sends.
-
-The flow:
-
-1. Before sending to eve, the app calls `markChatPendingMessageAction`.
-2. The chat row stores:
-   - `pendingUserMessage`
-   - `pendingUserMessageCreatedAt`
-3. If the page refreshes before the turn completes, `getChatForUser` returns the
-   pending message.
-4. `SessionChatPage` consumes it once the controller is ready.
-5. After a settled event is persisted, `getChatForUser` hides stale pending
-   messages.
-6. `saveChatSnapshot` and `skipChatAuthorization` clear pending state.
-
-This gives the app a way to recover from "message was accepted by the UI but the
-browser left before eve completed."
-
-## Refresh And Resume
-
-If a user refreshes during an in-progress eve turn, the app can resume from the
-saved eve session.
-
-`AgentChatSession` checks:
-
-- there is a viewer
-- there is a `pendingUserMessage`
-- the loaded chat has an `activeChat.session.sessionId`
-- resume has not already started
-- `useEveAgent` is ready
-
-Then it creates a temporary persisted client session from `activeChat.session`
-and streams:
-
-```ts
-session.stream({
-  startIndex: activeChat.events.length,
-  ignoreLeadingWaiting,
-})
-```
-
-Each resumed event is:
-
-- appended to local resume overlay state
-- written to `chat_event`
-- later included in the final snapshot
-
-When a settled event arrives, the app saves the full snapshot and clears pending
-state.
-
-The resume overlay exists because the main `useEveAgent` instance was initialized
-from the loaded events. New resumed events are layered on top until the final
-snapshot catches up.
-
-## Authorization Flow For Connections
-
-Connections are not string-parsed from assistant text. eve emits structured
-authorization events.
-
-When a connection requires auth, eve emits:
-
-```txt
-authorization.required
-```
-
-`getPendingAuthorizations(displayEvents)` scans the current event log:
-
-- add a pending authorization for each `authorization.required`
-- remove it when a matching `authorization.completed` appears
-
-For each pending authorization, the UI renders `ConnectionAuthorizationPrompt`.
-
-The prompt can show:
-
-- the connection display name
-- the authorization description
-- a Connect link if eve provided one
-- a Skip button
-
-While an authorization is pending, regular chat input is disabled for that
-session. This is intentional because eve is waiting for a structured outcome,
-not a normal user message.
-
-### Connect
-
-Clicking Connect opens the authorization URL provided by eve. After the user
-authorizes the connection, eve should receive the callback and continue the
-turn. The browser stream then receives the next events for that same eve
-session.
-
-### Skip
-
-Skip is a local way to end the authorization wait without connecting the service.
-
-`handleSkipAuthorization`:
-
-1. Stops the current agent stream.
-2. Creates an `authorization.completed` event with outcome `declined`.
-3. Creates a local `session.waiting` event.
-4. Applies those events to the persisted browser session.
-5. Saves them through `skipChatAuthorizationAction`.
-6. Clears pending user message state.
-
-That means "skip" ends the current turn. The next normal user message should
-start a fresh turn with the updated context.
-
-## Connections Menu
-
-The composer footer contains `ComposerFooterControls`, which renders
-`IntegrationsMenu`.
-
-Right now the only user-visible connection toggle is Notion. The toggle state is
-kept in `AgentChatShell` as:
-
-```ts
-enabledConnections = { notion: true }
-```
-
-When a message is sent, the app passes a natural-language `clientContext` to
-eve:
-
-```ts
-createConnectionClientContext(enabledConnections)
-```
-
-If a connection is enabled, the context tells eve which of Notion, Linear, and
-Sentry the user enabled for this turn. Disabled connections are called out so
-the model does not use them unless the user enables them first.
-
-This toggle does not provision, create, or revoke a Vercel Connect connector. It
-only controls per-turn agent behavior.
-
-The actual MCP connectors are configured in `agent/connections/*.ts`. For
-example, Notion is configured in `agent/connections/notion.ts`:
-
-```ts
-const notionConnector = process.env.NOTION_CONNECTOR ?? "notion";
-
-export default defineMcpClientConnection({
-  url: "https://mcp.notion.com/mcp",
-  description: "Notion workspace: search and edit pages and databases.",
-  auth: connect(notionConnector),
-});
-```
-
-For production, set `NOTION_CONNECTOR`, `LINEAR_CONNECTOR`, and
-`SENTRY_CONNECTOR` to the returned Vercel Connect connector UIDs. For local
-development, connectors created with `--name notion`, `--name linear`, and
-`--name sentry` match the fallback names.
-
-## Auth
-
-The app uses Better Auth with Sign in with Vercel.
-
-`lib/auth-url.ts` resolves the base app URL in this order:
-
-1. `BETTER_AUTH_URL`
-2. `VERCEL_PROJECT_PRODUCTION_URL`
-3. `VERCEL_URL`
-4. `http://localhost:3000`
-
-`lib/auth.ts` configures Better Auth with:
-
-- Drizzle adapter
-- encrypted OAuth tokens
-- Vercel social provider
-- required scopes: `openid`, `email`, `profile`
-- `/auth/error` as the error page
-
-`lib/session.ts` returns a safe `Viewer` object for server components. It returns
-`null` if setup is incomplete so auth failures do not cascade into the chat UI.
-
-`lib/eve-auth.ts` adapts the Better Auth session into an eve channel principal:
-
-```ts
-{
-  principalType: "user",
-  principalId: session.user.id,
-  subject: session.user.email,
-  attributes: {
-    email: session.user.email,
-    name: session.user.name,
-  },
-}
-```
-
-`agent/channels/eve.ts` allows:
-
-- `betterAuthEveAuth`
-- `localDev()`
-- `vercelOidc()`
-
-That lets the same channel work locally, in authenticated browser sessions, and
-with Vercel OIDC contexts.
+The theme preference (system, light or dark) is handled by `components/theme-provider.tsx` and `lib/theme.ts`, and is set on `/settings`. Design tokens (silver palette, type scale, status and platform glyph colors) are in `app/globals.css` and shown on `/design`. Functional color appears only as glyphs and dots, never as surface fills.
 
 ## Setup Readiness
 
-`lib/setup.ts` produces a `SetupStatus` object:
-
-```ts
-type SetupStatus = {
-  appReady: boolean;
-  authReady: boolean;
-  databaseConfigured: boolean;
-  databaseReady: boolean;
-  databaseSchemaReady: boolean;
-  missing: readonly string[];
-  rateLimitReady: boolean;
-};
-```
-
-The app is ready only when:
-
-- `DATABASE_URL` exists
-- database migrations have created the expected tables
-- Better Auth env vars are present
-- Upstash Redis env vars are present
-
-The database schema check asks Postgres whether these tables exist:
-
-- `account`
-- `chat`
-- `chat_event`
-- `session`
-- `user`
-- `verification`
-
-The UI uses setup status in three places:
-
-1. Root composer disabled state
-2. Session composer disabled state
-3. Sidebar auth/sign-in controls
-
-Disabled composers should always provide a reason through tooltip text.
+`lib/setup.ts` checks Neon, migrations, auth and Redis. The shell shows setup state and disables chat with a tooltip when something is missing. Missing migrations show as `database migrations`.
 
 ## Rate Limiting
 
-Rate limiting uses Upstash Redis in `lib/rate-limit.ts`.
+`lib/rate-limit.ts` uses Upstash Redis fixed windows. `checkSendLimitAction` runs before every send and every authorization response. Agent session usage is capped by `lib/agent-limits.ts` through `limits.sessionUsage` in `agent/agent.ts`.
 
-The app supports either current Upstash env names:
+## Rendering Messages
 
-- `UPSTASH_REDIS_REST_URL`
-- `UPSTASH_REDIS_REST_TOKEN`
+`components/chat/message.tsx` renders eve messages: markdown through Streamdown, collapsible reasoning, tool groups with running, done and error states, authorization cards and input requests. `deriveChatView` (`lib/chat/derive.ts`) turns the conversation and status into the flags the UI needs (busy, resuming, awaiting authorization).
 
-or legacy Vercel KV env names:
+## Errors
 
-- `KV_REST_API_URL`
-- `KV_REST_API_TOKEN`
+Errors surface as Sonner toasts (`components/ui/sonner.tsx`). The hook calls `onError` with a message for failed saves, refused attachments, rate limits, upload failures and `turn.failed` events. A `MODEL_CALL_FAILED` turn shows "The model is temporarily unavailable. Please try again."
 
-`enforceRateLimit` uses a fixed window key:
+## Invariants
 
-```txt
-rate:<prefix>:<viewer id>:<window id>
-```
+- A chat row is not an eve session. The row owns the URL, title, owner, pending message and stored session. eve owns the remote durable session.
+- `chat_event.event_index` orders local rows. It is not a stream cursor.
+- Dedupe events by `meta.id`. Never rely on `JSON.stringify` key order.
+- A legacy chat never sends.
+- The first message auto-sends only with the local handoff marker.
+- Tools never take a brand id as input.
+- No secret is written to Postgres in plaintext.
+- Add no eve `defineSchedule` files (Vercel Hobby).
 
-The current send limits are:
+## Adding a Tool
 
-- `chat:create`: 25 per hour
-- `chat:send`: 25 per hour
-- Message length: 8,000 characters
+Create `agent/tools/<snake_case>.ts` with `defineTool(...)`. The filename becomes the tool name, so keep it ASCII snake_case. Read the brand from `auth.attributes`, never from input.
 
-The create and send limits are separate so creating a chat and then sending a
-message can be guarded independently. Message length is enforced in the
-composer and again in server actions before creating chats or saving pending
-messages.
+## Adding a Connection
 
-## Message Rendering
+Create `agent/connections/<name>.ts` with `defineMcpClientConnection(...)` and `connect(process.env.ENV_NAME ?? "local-name")`. Add the toggle to `components/chat/integrations-menu.tsx` if users should control it per turn. Toggles are per-turn intent, not provisioning or OAuth state.
 
-`useEveAgent` reduces stream events into message data. The template renders that
-data through `components/chat/message.tsx`.
+## Adding a Channel
 
-Message rendering supports:
-
-- user bubbles
-- assistant markdown through Streamdown
-- reasoning parts
-- dynamic tool parts
-- tool input/response UI
-- optimistic pending user messages
-- a separate "Thinking..." presence row
-
-User messages are rendered as rounded, compact bubbles aligned to the right.
-Assistant messages are full-width text on the left.
-
-Tool calls are grouped so a sequence of dynamic tool parts appears as one
-compact row. Tool rows can be expanded only when they have useful details or
-input controls.
-
-Reasoning parts render as a collapsible block. While streaming, the label says
-"Thinking..." and uses shimmer text.
-
-The standalone `ThinkingMessage` appears when the session is busy but there is
-not yet enough assistant text to make progress feel visible, or while a response
-is still active. It fades out instead of disappearing abruptly.
-
-## Composer Behavior
-
-`components/chat/composer.tsx` is controlled by the page:
-
-- `value`
-- `onChange`
-- `onSubmit`
-- `disabled`
-- `disabledReason`
-- `isBusy`
-- `isPreparing`
-
-The composer:
-
-- auto-focuses when enabled
-- submits on Enter
-- inserts a newline on Shift+Enter
-- disables while a request is in flight
-- shows a stop button when eve is busy
-- shows a spinner when the root page is creating a chat
-- wraps disabled states in a tooltip
-
-Root and session pages render the same composer component, but they place it
-differently:
-
-- root page: centered with the eve logo
-- session page: pinned near the bottom of the chat route
-
-This separation prevents root route layout from briefly looking like a session
-route and vice versa.
-
-## Error Handling
-
-User-visible request failures render as `ErrorToast`, not inline layout blocks.
-That keeps errors from pushing the composer or chat body around.
-
-Common setup errors:
-
-- missing `DATABASE_URL`
-- migrations not run
-- missing Better Auth secret or Vercel OAuth env vars
-- missing Upstash Redis env vars
-- Vercel OAuth app missing the `email` scope
-
-Common stream errors:
-
-- stream disconnected before a settled event
-- eve session missing when trying to resume
-- authorization callback not pending
-- rate limit exceeded
-
-The app generally prefers:
-
-- toast for recoverable request failures
-- disabled composer with tooltip for setup blockers
-- structured auth cards for connection blockers
-
-## Event Log Invariants
-
-These invariants are important:
-
-1. `chat_event.eventIndex` must be unique per chat.
-2. A completed snapshot should overwrite stale event rows by index.
-3. Rows beyond the final snapshot length should be deleted.
-4. `pendingUserMessage` should be cleared after a settled turn.
-5. Local authorization skip events must be merged into final snapshots.
-6. A pending authorization should disable normal text input for that session.
-7. A route change should reset per-chat refs such as event index and local
-   pending messages.
-8. Sidebar history should update optimistically, but the event log remains the
-   source of truth for chat content.
-
-When debugging "messages replaced old messages" or "a response updated after it
-looked complete", inspect these pieces first:
-
-- whether two events were written to the same local `eventIndex`
-- whether `preserveKnownInitialEvents` duplicated or dropped a prefix
-- whether `pendingUserMessage` was left on the chat row after a settled event
-- whether the eve stream ended with `session.waiting` before the UI expected it
-- whether a local optimistic message was cleared before the real user event
-  appeared
-
-## Adding A New Tool
-
-To add a local eve tool:
-
-1. Create a file in `agent/tools/`.
-2. Export a `defineTool(...)`.
-3. Import/register it according to eve's agent conventions.
-4. Update `agent/instructions.md` so the agent knows when to use it.
-5. If the UI should render a special tool state, update
-   `components/chat/message.tsx`.
-
-Keep tool output structured. The message renderer can make much better UI
-decisions when tool parts contain predictable JSON instead of prose-only output.
-
-## Adding A New Connection
-
-To add another Vercel Connect-backed MCP connection:
-
-1. Add `agent/connections/<name>.ts`.
-2. Use `defineMcpClientConnection`.
-3. Use `connect(process.env.<ENV_NAME> ?? "<local-name>")`.
-4. Add deploy/docs instructions for provisioning that connector.
-5. Extend `EnabledConnections` in `chat-shell-context.tsx`.
-6. Add a toggle in `IntegrationsMenu`.
-7. Update `createConnectionClientContext` so eve receives per-turn intent.
-8. Verify auth-required events render correctly.
-
-Do not parse assistant text to detect auth requirements. Rely on
-`authorization.required` and `authorization.completed` events.
-
-## Adding A New Channel
-
-This template exposes a web chat channel through `agent/channels/eve.ts`, a
-Slack channel through `agent/channels/slack.ts`, and the `withEve` Next.js
-integration.
-
-If you add another channel, keep this separation:
-
-- channel-specific webhook or transport code belongs in `agent/channels/`
-- web chat UI state belongs in `app/_components/` and `components/chat/`
-- cross-channel agent behavior belongs in `agent/instructions.md`, tools, and
-  connections
-
-The web chat persistence code is intentionally tied to the browser experience.
-Do not reuse it as a generic state adapter for every channel without checking
-the other channel's message and session semantics.
+Add `agent/channels/<name>.ts`. Keep channel auth explicit and map the channel's identity to a brand through `channel_identity`.
 
 ## Development Checklist
 
-When making changes to the chat flow, verify:
-
-1. Root page renders without layout shift.
-2. Unauthenticated users can type, then are prompted to sign in.
-3. First message creates a chat and appears immediately after navigation.
-4. Follow-up messages appear optimistically.
-5. Assistant text streams without replacing older messages.
-6. Refreshing mid-response resumes or ends with a clear error.
-7. Sidebar history remains visible and active row state is correct.
-8. Sidebar pagination still loads older chats.
-9. Pending authorization disables only the affected session.
-10. Connect and Skip both leave the conversation in a usable state.
-11. Setup blockers show tooltips or actionable auth/setup pages.
-12. `pnpm typecheck` and `pnpm build` pass.
-
-## Mental Model
-
-Think of the app as a small durable chat runtime:
-
-```mermaid
-flowchart TD
-  User["User submits text"] --> Composer["ChatComposer"]
-  Composer --> Page["HomeChatPage or SessionChatPage"]
-  Page --> Controller["AgentChatSession controller"]
-  Controller --> Pending["Mark pendingUserMessage"]
-  Pending --> EvePost["POST /eve/v1/session"]
-  EvePost --> Stream["GET /eve/v1/session/:id/stream"]
-  Stream --> EventRows["append chat_event rows"]
-  Stream --> UI["useEveAgent renders messages"]
-  UI --> Snapshot["onFinish saves full snapshot"]
-  Snapshot --> ChatRow["chat.eveSession and pending cleared"]
-  ChatRow --> Sidebar["touchChat updates sidebar"]
+```bash
+pnpm test
+pnpm typecheck
+pnpm build
+pnpm eve:build
 ```
 
-The browser is allowed to be interrupted. Postgres keeps enough state to rebuild
-the UI and continue from eve's stream cursor. The static shell keeps navigation
-smooth. The final snapshot keeps the event log canonical.
-
-That is the core design.
+On a machine without Docker, `pnpm eve:build` fails on a missing `just-bash` package. See [Local eve build](setup-and-deploy.md#local-eve-build).
