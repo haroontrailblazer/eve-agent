@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { isEmailAllowed } from "@/lib/allowlist";
 import { auth } from "@/lib/auth";
 import type { SetupStatus, Viewer } from "@/lib/chat/types";
 import { getSetupStatus } from "@/lib/setup";
@@ -15,7 +16,9 @@ export async function getServerViewer(setupStatus?: SetupStatus): Promise<Viewer
       headers: await headers(),
     });
 
-    if (!session?.user) {
+    // A session cookie for an account that is no longer allowed reads as
+    // signed out.
+    if (!session?.user || !isEmailAllowed(session.user.email)) {
       return null;
     }
 

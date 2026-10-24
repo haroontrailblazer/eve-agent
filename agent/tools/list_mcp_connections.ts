@@ -29,6 +29,7 @@ export default defineTool({
           account: c.account,
           enabled: c.enabled,
           hasToken: Boolean(c.token),
+          needsReconnect: c.secretsUnreadable,
           platform: c.platform,
           url: c.url,
         })),

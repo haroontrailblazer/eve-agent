@@ -1,24 +1,35 @@
 "use client";
 
 import { useEffect } from "react";
-import { CHAT_BOOTSTRAP_SYNC_EVENT } from "@/app/_components/agent-chat-events";
+import {
+  CHAT_BOOTSTRAP_SYNC_EVENT,
+  type ChatBootstrapSyncDetail,
+} from "@/app/_components/agent-chat-events";
 import type { ChatListItem, SetupStatus, Viewer } from "@/lib/chat/types";
 
 export function AgentChatBootstrapSync({
   chats,
   nextCursor,
   setupStatus,
+  slackConfigured,
   viewer,
 }: {
   readonly chats: readonly ChatListItem[];
   readonly nextCursor: string | null;
   readonly setupStatus: SetupStatus;
+  readonly slackConfigured: boolean;
   readonly viewer: Viewer | null;
 }) {
   useEffect(() => {
-    const detail = { chats, nextCursor, setupStatus, viewer };
+    const detail: ChatBootstrapSyncDetail = {
+      chats,
+      nextCursor,
+      setupStatus,
+      slackConfigured,
+      viewer,
+    };
     const target = window as Window & {
-      __eveChatBootstrapSync?: typeof detail;
+      __eveChatBootstrapSync?: ChatBootstrapSyncDetail;
     };
 
     target.__eveChatBootstrapSync = detail;
@@ -27,7 +38,7 @@ export function AgentChatBootstrapSync({
         detail,
       }),
     );
-  }, [chats, nextCursor, setupStatus, viewer]);
+  }, [chats, nextCursor, setupStatus, slackConfigured, viewer]);
 
   return null;
 }

@@ -5,24 +5,15 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthDisplayPreHydrationHead } from "@/components/auth/auth-display";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { getAppOrigin } from "@/lib/app-origin";
+import { sidebarHintScript } from "@/lib/sidebar-hint";
+import { themeInitScript } from "@/lib/theme";
 import "./globals.css";
 
 const title = "harpy";
 const description = "Chat with harpy, your own AI agent.";
-
-function resolveMetadataBase() {
-  const configuredUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ??
-    process.env.VERCEL_URL;
-
-  if (!configuredUrl) {
-    return new URL("http://localhost:3000");
-  }
-
-  return new URL(configuredUrl.startsWith("http") ? configuredUrl : `https://${configuredUrl}`);
-}
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -41,7 +32,7 @@ const orbitron = Orbitron({
 });
 
 export const metadata: Metadata = {
-  metadataBase: resolveMetadataBase(),
+  metadataBase: new URL(getAppOrigin()),
   title,
   description,
   applicationName: title,
@@ -63,24 +54,6 @@ export const metadata: Metadata = {
   },
 };
 
-const themeScript = `
-(() => {
-  try {
-    const theme = window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
-    const root = document.documentElement;
-    root.classList.remove("dark", "light");
-    root.classList.add(theme);
-    root.style.colorScheme = theme;
-  } catch {
-    const root = document.documentElement;
-    root.classList.add("dark");
-    root.style.colorScheme = "dark";
-  }
-})();
-`;
-
 export default function RootLayout({ children }: { readonly children: ReactNode }) {
   return (
     <html
@@ -89,12 +62,14 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} id="theme-init" />
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} id="theme-init" />
+        <script dangerouslySetInnerHTML={{ __html: sidebarHintScript }} id="sidebar-hint" />
         <AuthDisplayPreHydrationHead />
       </head>
       <body className={`${geistSans.className} antialiased`}>
         <ThemeProvider>
           <TooltipProvider>{children}</TooltipProvider>
+          <Toaster />
         </ThemeProvider>
         <Analytics />
         <SpeedInsights />

@@ -20,7 +20,6 @@ const CODE_EXTS = new Set([
 type ChipMeta = {
   readonly Icon: ComponentType<{ readonly className?: string }>;
   readonly label: string;
-  readonly tile: string;
 };
 
 function metaFor(name: string, mediaType: string): ChipMeta {
@@ -29,26 +28,26 @@ function metaFor(name: string, mediaType: string): ChipMeta {
   const extLabel = ext ? ext.toUpperCase() : "";
 
   if (type.startsWith("image/")) {
-    return { Icon: ImageIcon, label: extLabel || "IMAGE", tile: "bg-sky-500/15 text-sky-500" };
+    return { Icon: ImageIcon, label: extLabel || "IMAGE" };
   }
 
   if (type === "application/pdf" || ext === "pdf") {
-    return { Icon: FileTextIcon, label: "PDF", tile: "bg-rose-500/15 text-rose-500" };
+    return { Icon: FileTextIcon, label: "PDF" };
   }
 
   if (type === "application/json" || ext === "json") {
-    return { Icon: FileJsonIcon, label: "JSON", tile: "bg-amber-500/15 text-amber-600 dark:text-amber-500" };
+    return { Icon: FileJsonIcon, label: "JSON" };
   }
 
   if (CODE_EXTS.has(ext)) {
-    return { Icon: FileCodeIcon, label: extLabel || "CODE", tile: "bg-violet-500/15 text-violet-500" };
+    return { Icon: FileCodeIcon, label: extLabel || "CODE" };
   }
 
   if (type.startsWith("text/") || ext === "md" || ext === "txt") {
-    return { Icon: FileTextIcon, label: extLabel || "TEXT", tile: "bg-blue-500/15 text-blue-500" };
+    return { Icon: FileTextIcon, label: extLabel || "TEXT" };
   }
 
-  return { Icon: FileIcon, label: extLabel || "FILE", tile: "bg-muted text-muted-foreground" };
+  return { Icon: FileIcon, label: extLabel || "FILE" };
 }
 
 function formatBytes(bytes: number): string {
@@ -113,16 +112,11 @@ export function AttachmentChip({
   return (
     <span
       className={cn(
-        "relative inline-flex w-[15rem] max-w-full items-center gap-2.5 rounded-xl border border-border/60 bg-background/80 py-1.5 pr-2.5 pl-1.5 shadow-sm",
+        "relative inline-flex w-60 max-w-full items-center gap-2.5 rounded-xl border border-border/60 bg-background/80 py-1.5 pr-2.5 pl-1.5 shadow-sm",
         className,
       )}
     >
-      <span
-        className={cn(
-          "flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg",
-          thumbnailSrc ? "bg-muted" : meta.tile,
-        )}
-      >
+      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted text-muted-foreground">
         {thumbnailSrc ? (
           // Thumbnail preview of the attached image.
           // eslint-disable-next-line @next/next/no-img-element
@@ -132,10 +126,10 @@ export function AttachmentChip({
         )}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium leading-4 text-foreground">
+        <span className="block truncate text-small font-medium leading-4 text-foreground">
           {name}
         </span>
-        <span className="block truncate text-[11px] leading-4 text-muted-foreground">
+        <span className="block truncate font-mono text-meta leading-4 text-muted-foreground">
           {subtitle}
         </span>
       </span>

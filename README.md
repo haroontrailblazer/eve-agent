@@ -1,144 +1,70 @@
-# eve Chat Template
+# harpy
 
-A persisted Next.js chat template for [eve](https://beta.eve.dev), built with shadcn/ui, Tailwind CSS, Streamdown, Better Auth, Drizzle, Neon, and Upstash Redis.
+harpy is a private social media control room built on [eve](https://beta.eve.dev) (0.82) and Next.js 16. It has an agent chat, a studio for drafts and images, and a sidebar shell for the planning pages around them. It uses shadcn/ui, Tailwind CSS, Streamdown, Better Auth, Drizzle, Neon, Upstash Redis and Vercel Blob.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?project-name=eve-chat-template&repository-name=eve-chat-template&repository-url=https%3A%2F%2Fgithub.com%2Fvercel-labs%2Feve-chat-template%2Ftree%2Fmain&env=BETTER_AUTH_SECRET%2CNEXT_PUBLIC_VERCEL_APP_CLIENT_ID%2CVERCEL_APP_CLIENT_SECRET&envDescription=Neon+provisions+DATABASE_URL.+Upstash+Redis+provisions+rate-limit+storage.+Add+Better+Auth+secret+and+Sign+in+with+Vercel+credentials.+After+deploy%2C+run+production+migrations+from+the+setup+guide.&envLink=https%3A%2F%2Fgithub.com%2Fvercel-labs%2Feve-chat-template%2Fblob%2Fmain%2Fdocs%2Fsetup-and-deploy.md&products=%5B%7B%22type%22%3A%22integration%22%2C%22protocol%22%3A%22storage%22%2C%22productSlug%22%3A%22neon%22%2C%22integrationSlug%22%3A%22neon%22%7D%2C%7B%22type%22%3A%22integration%22%2C%22protocol%22%3A%22storage%22%2C%22productSlug%22%3A%22upstash-kv%22%2C%22integrationSlug%22%3A%22upstash%22%7D%5D)
+harpy is a fork of the eve chat template. Only the owner and the emails on the allowlist can sign in.
 
-## Quick Start
+## Phase 1 status: foundation
 
-Two ways to get going:
+Done on the `harpy-v2` branch:
 
-- **One-click:** use the **Deploy with Vercel** button above to clone and provision storage, then run migrations (see [Setup and Deployment](docs/setup-and-deploy.md#one-click-deploy)).
-- **Local script:** clone the repo and run the setup script. It links the project, provisions Neon, registers the Sign in with Vercel OAuth app (email scope + callbacks), sets the environment variables through the Vercel API, pulls them locally, runs migrations, and can optionally set up the Notion connector. If OAuth app registration isn't available it falls back to a guided manual flow.
+- **Chat.** The web chat runs on eve 0.82 `useEveAgent` with resume. Events persist by eve's `meta.id` and load in `event_index` order. Chats from before the upgrade are legacy and read-only.
+- **Auth and brands.** An email allowlist, plus `brand`, `brand_member` and `channel_identity` tables. Every web principal carries a verified `brandId`.
+- **Media.** Images live on public Vercel Blob, with SSRF-safe source loading and direct browser uploads.
+- **Secrets.** MCP tokens and OAuth state are encrypted at rest with `SOCIAL_TOKEN_ENCRYPTION_KEY`.
+- **Design system.** Silver tokens, a type scale, status and platform glyph colors, a system/light/dark theme setting, shadcn primitives and harpy components, all shown on `/design`.
+- **Shell and pages.** A sidebar shell with Studio, Calendar, Inbox, Brief, Brand voice, Channels, Chat and Settings. `/profile` redirects to `/settings`.
 
-```bash
-# Uses the linked project's team by default
-./scripts/setup.sh
+Not done yet: migrations 0006 to 0009 are generated but not applied, and the manual verification pass has not been run. See the owner checklist in [Setup and Deployment](docs/setup-and-deploy.md#owner-verification-checklist). Publishing, scheduling and the real content pages come in later phases.
 
-# Or target a specific team (also accepts a bare team slug)
-./scripts/setup.sh --scope <team-slug>
-```
+## Setup
 
-The `--scope` is optional; omit it to use the linked project's team. The script needs the `vercel` CLI, `node`, `pnpm`, and `openssl`. Prefer to do it by hand? Follow the sequential steps below, or the full [Setup and Deployment](docs/setup-and-deploy.md) guide.
-
-## Getting Started
-
-For the full local setup, storage provisioning, Sign in with Vercel credentials, and production deploy flow, see [Setup and Deployment](docs/setup-and-deploy.md). For the runtime architecture, streaming model, persistence flow, and extension points, see [How the Chatbot Works](docs/how-the-chatbot-works.md).
-
-Install dependencies with pnpm:
+Requirements: Node.js 24 or newer, pnpm 10.12.4 (through Corepack), a Vercel account.
 
 ```bash
+corepack enable
 pnpm install
-```
-
-Link the Vercel project and pull environment variables:
-
-```bash
 vercel link
-```
-
-Provision storage with the [Vercel CLI integration commands](https://vercel.com/docs/cli/integration):
-
-```bash
-# Required: persisted chat, auth, eve session state, and message snapshots
-vercel integration add neon
-
-# Required: Redis-backed rate limiting
-vercel integration add upstash
-```
-
-Follow the prompts to connect each resource to the linked project. Then pull the generated environment variables locally:
-
-```bash
 vercel env pull .env.local --yes
 ```
 
-Required environment variables:
+Then set the harpy variables from `.env.example`:
 
 ```bash
-DATABASE_URL=
-BETTER_AUTH_SECRET=
-NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=
-VERCEL_APP_CLIENT_SECRET=
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
-KV_REST_API_URL=
-KV_REST_API_TOKEN=
+HARPY_OWNER_EMAIL=
+HARPY_ALLOWED_EMAILS=
+SOCIAL_TOKEN_ENCRYPTION_KEY=   # openssl rand -base64 32
+BLOB_READ_WRITE_TOKEN=         # a public Vercel Blob store; needed for images and uploads, chat works without it
+AI_GATEWAY_API_KEY=            # local only, or use VERCEL_OIDC_TOKEN from vercel env pull
 ```
 
-Optional environment variables:
+`scripts/setup.sh` still provisions Neon, Upstash and the Sign in with Vercel app, but it does not set the harpy variables above. Set them yourself.
 
-```bash
-# Override the app origin for custom production domains.
-BETTER_AUTH_URL=
-
-# Enable hosted Vercel Connect integrations.
-SLACK_CONNECTOR=
-LINEAR_CONNECTOR=
-NOTION_CONNECTOR=
-SENTRY_CONNECTOR=
-```
-
-Create optional Vercel Connect integrations:
-
-```bash
-# Slack channel
-vercel connect create slack --name eve-chat-template --triggers
-vercel connect attach <slack-connector-uid> --triggers --trigger-path /eve/v1/slack --yes
-
-# MCP connections
-vercel connect create mcp.notion.com --name notion
-vercel connect create https://mcp.linear.app/mcp --name linear
-vercel connect create https://mcp.sentry.dev/mcp --name sentry
-```
-
-The deploy button does not require these integrations. For manual setup, put the returned connector UIDs in `SLACK_CONNECTOR`, `NOTION_CONNECTOR`, `LINEAR_CONNECTOR`, and `SENTRY_CONNECTOR`. Local development falls back to `slack/eve-chat-template`, `notion`, `linear`, and `sentry`, so connectors created with the names above work without editing `agent/`.
-
-If the connector is not attached to the linked project, run:
-
-```bash
-vercel connect attach <connector-uid> --yes
-vercel env pull .env.local
-```
-
-Create the database tables:
+Back up the database first (a Neon branch), then apply the migrations and start the app:
 
 ```bash
 pnpm db:migrate
-```
-
-For production, run migrations with Vercel production env vars:
-
-```bash
-vercel env run -e production -- pnpm db:migrate
-```
-
-Start the development server:
-
-```bash
 pnpm dev
 ```
 
-## What Is Included
+In production, deploy harpy-v2 first and then run `pnpm db:migrate:production` right away (see [deploy first, then migrate](docs/setup-and-deploy.md#production-deploy-first-then-migrate)). The full guide, including Vercel Blob, the encryption key warning, Vercel Hobby limits and the local eve build, is in [docs/setup-and-deploy.md](docs/setup-and-deploy.md).
 
-- Text chat with an eve agent through same-origin `/eve/v1/*` routes
-- Better Auth sign-in with Vercel
-- Mandatory Neon-backed chat history
-- Mandatory Upstash Redis rate limiting for authenticated chat sends
-- Drizzle schema and migrations under `lib/db`
-- Saved eve session cursors and event snapshots
-- Sidebar history with delete and new-chat actions
-- Vercel Connect-backed Notion, Linear, and Sentry MCP connections
-- Vercel Connect-backed Slack channel route at `/eve/v1/slack`
-- Composer-level connections menu
-- First-message chat titles derived locally from the user's prompt
-- Streamdown markdown rendering for assistant text and reasoning
-- shadcn/Tailwind components for messages, tools, HITL prompts, and composer
+## Checks
 
-This template intentionally does not include file uploads, Vercel Blob, guest mode, NextAuth/Auth.js, or AI Elements.
+```bash
+pnpm test
+pnpm typecheck
+pnpm build
+pnpm eve:build
+```
 
-## Agent Code
+Without Docker, `pnpm eve:build` uses the `just-bash` sandbox provider, which is a devDependency, so it works after `pnpm install`.
 
-Edit the agent in `agent/agent.ts`. Its behavior is defined in `agent/instructions.md`, and tools live in `agent/tools/`.
+## Documentation
 
-The browser talks to eve with `useEveAgent()` from `eve/react`; the app stores eve stream events and session state so `/chat/[id]` can resume the same durable conversation after refresh.
+- [How the chatbot works](docs/how-the-chatbot-works.md): chat hook, persistence, legacy chats, allowlist, media, secrets, shell.
+- [Setup and deployment](docs/setup-and-deploy.md): env vars, migrations, Blob, Hobby notes, owner checklist.
+
+## Agent code
+
+Edit the agent in `agent/agent.ts`. Its behavior is defined in `agent/instructions.md`, and tools live in `agent/tools/`. Tools never take a brand id as input. They read the brand from the verified `auth.attributes`. Read the guides in `node_modules/eve/docs/` before changing eve code.

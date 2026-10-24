@@ -1,29 +1,19 @@
 "use client";
 
-import type { ComponentType } from "react";
 import { HammerIcon } from "lucide-react";
-import { LinearIcon, NotionIcon, SentryIcon } from "@/components/icons";
+import { PlatformIcon } from "@/components/harpy/platform-icon";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import type { EnabledConnections } from "@/app/_components/chat-shell-context";
 import type { SetupStatus } from "@/lib/chat/types";
-import { cn } from "@/lib/utils";
+import { PLATFORMS } from "@/lib/platforms";
 
-type ConnectionItem = {
-  readonly key: keyof EnabledConnections;
-  readonly label: string;
-  readonly Icon: ComponentType<{ readonly className?: string }>;
-};
-
-const CONNECTION_ITEMS: readonly ConnectionItem[] = [
-  { key: "notion", label: "Notion", Icon: NotionIcon },
-  { key: "linear", label: "Linear", Icon: LinearIcon },
-  { key: "sentry", label: "Sentry", Icon: SentryIcon },
-];
+const CONNECTION_KEYS = ["notion", "linear", "sentry"] as const satisfies readonly (keyof EnabledConnections)[];
 
 export function IntegrationsMenu({
   enabledConnections,
@@ -55,7 +45,8 @@ export function IntegrationsMenu({
         className="w-48 rounded-md border-border bg-popover p-1"
         sideOffset={4}
       >
-        {CONNECTION_ITEMS.map(({ Icon, key, label }) => {
+        {CONNECTION_KEYS.map((key) => {
+          const { label } = PLATFORMS[key];
           const enabled = enabledConnections[key];
 
           return (
@@ -74,29 +65,33 @@ export function IntegrationsMenu({
               role="menuitemcheckbox"
             >
               <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-foreground">
-                <Icon className="size-[18px] text-foreground" />
+                <PlatformIcon className="size-4.5 text-foreground" platform={key} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm text-foreground">{label}</span>
               </span>
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
-                  enabled ? "bg-emerald-500" : "bg-muted",
-                )}
-              >
-                <span
-                  className={cn(
-                    "size-3 rounded-full bg-white shadow-sm transition-transform",
-                    enabled ? "translate-x-[15px]" : "translate-x-0.5",
-                  )}
-                />
-              </span>
+              <ConnectionSwitch enabled={enabled} />
             </DropdownMenuItem>
           );
         })}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * The on/off indicator inside a menu item. The item is the control, so this is
+ * visual only: hidden from assistive tech, out of the tab order, and not a
+ * click target of its own.
+ */
+export function ConnectionSwitch({ enabled }: { readonly enabled: boolean }) {
+  return (
+    <Switch
+      aria-hidden="true"
+      checked={enabled}
+      className="pointer-events-none"
+      size="sm"
+      tabIndex={-1}
+    />
   );
 }

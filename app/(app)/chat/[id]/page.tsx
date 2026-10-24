@@ -1,0 +1,47 @@
+import { Suspense } from "react";
+import { notFound } from "next/navigation";
+import { SessionChatPage } from "@/app/_components/session-chat-page";
+import { isProvisionalChatId } from "@/lib/chat/provisional-chat";
+import { getChatForUser } from "@/lib/db/queries";
+import { getServerViewer } from "@/lib/session";
+import { getSetupStatus } from "@/lib/setup";
+
+export default async function ChatPage({
+  params,
+}: {
+  readonly params: Promise<{ readonly id: string }>;
+}) {
+  const { id: chatId } = await params;
+
+  return (
+    <SessionChatPage chatId={chatId} key={chatId}>
+      <Suspense fallback={null}>
+        <ExistingChat chatId={chatId} />
+      </Suspense>
+    </SessionChatPage>
+  );
+}
+
+// Answers a missing chat with a 404. It renders nothing: SessionChatPage loads
+// the chat itself with a no-store fetch, because the router can reuse a stale
+// copy of this render on back and forward.
+async function ExistingChat({
+  chatId,
+}: {
+  readonly chatId: string;
+}) {
+  if (isProvisionalChatId(chatId)) {
+    return null;
+  }
+
+  const setupStatus = await getSetupStatus();
+  const viewer = await getServerViewer(setupStatus);
+  const appReady = setupStatus.appReady;
+  const activeChat = viewer && appReady ? await getChatForUser(chatId, viewer.id) : null;
+
+  if (viewer && appReady && !activeChat) {
+    notFound();
+  }
+
+  return null;
+}

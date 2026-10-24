@@ -1,5 +1,5 @@
 {
-  "name": "eve-chat-template",
+  "name": "harpy",
   "version": "0.0.0",
   "type": "module",
   "packageManager": "pnpm@10.12.4",
@@ -18,12 +18,9 @@
     "start": "next start",
     "typecheck": "next typegen && tsgo --noEmit -p tsconfig.json",
     "eve:build": "eve build",
-    "eve:dev": "eve dev"
-  },
-  "pnpm": {
-    "patchedDependencies": {
-      "eve@0.8.3": "patches/eve@0.8.3.patch"
-    }
+    "eve:dev": "eve dev",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -38,21 +35,24 @@
     "@tailwindcss/postcss": "4.3.0",
     "@upstash/redis": "1.38.0",
     "@vercel/analytics": "2.0.1",
-    "@vercel/connect": "0.2.4",
+    "@vercel/blob": "^2.8.2",
+    "@vercel/connect": "^2.5.2",
     "@vercel/speed-insights": "2.0.0",
-    "ai": "7.0.0-canary.171",
+    "ai": "^7.0.137",
     "better-auth": "1.5.5",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
-    "cmdk": "1.1.1",
+    "date-fns": "^4.4.0",
     "drizzle-orm": "0.45.1",
-    "eve": "latest",
+    "eve": "0.82.0",
     "lucide-react": "1.16.0",
     "next": "16.2.6",
     "radix-ui": "1.4.3",
     "react": "19.2.6",
+    "react-day-picker": "^10.0.2",
     "react-dom": "19.2.6",
     "shiki": "4.1.0",
+    "sonner": "^2.0.8",
     "streamdown": "2.5.0",
     "tailwind-merge": "3.6.0",
     "tailwindcss": "4.3.0",
@@ -65,7 +65,11 @@
     "@types/react-dom": "19.2.3",
     "@typescript/native-preview": "7.0.0-dev.20260523.1",
     "drizzle-kit": "0.31.9",
+    "just-bash": "^3.1.0",
     "microsandbox": "^0.5.7",
-    "typescript": "5.9.3"
+    "tw-animate-css": "1.4.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
   }
 }

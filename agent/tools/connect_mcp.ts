@@ -1,9 +1,11 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
+import { getAppOrigin } from "@/lib/app-origin";
 import { upsertMcpConnection } from "@/lib/db/mcp";
 import { errorMessage, isUnauthorizedError, listMcpTools, type McpAuth } from "@/lib/mcp-client";
 import { resolveDbUserId } from "@/lib/mcp-context";
-import { DbOAuthProvider, getAppOrigin } from "@/lib/mcp-oauth";
+import { DbOAuthProvider } from "@/lib/mcp-oauth";
+import { isValidPlatformKey } from "@/lib/mcp-platform-key";
 
 export default defineTool({
   description:
@@ -12,7 +14,9 @@ export default defineTool({
     platform: z
       .string()
       .min(1)
-      .describe("A short lowercase name for this MCP, e.g. 'higgsfield', 'deepwiki'."),
+      .describe(
+        "A short lowercase name for this MCP: letters, digits and hyphens, up to 40 characters, e.g. 'higgsfield', 'deepwiki'.",
+      ),
     url: z
       .string()
       .optional()
@@ -30,7 +34,15 @@ export default defineTool({
       return { ok: false, message: "You need to be signed in to manage MCP connections." };
     }
 
-    const platform = input.platform.toLowerCase();
+    const platform = input.platform.trim().toLowerCase();
+
+    if (!isValidPlatformKey(platform)) {
+      return {
+        ok: false,
+        message:
+          "The platform name must be 1 to 40 characters: lowercase letters, digits and hyphens only, e.g. 'notion' or 'my-server-2'.",
+      };
+    }
 
     let connection;
     try {

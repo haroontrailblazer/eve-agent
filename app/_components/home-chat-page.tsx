@@ -2,28 +2,19 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ComposerFooterControls,
-  ErrorToast,
-  type AgentChatControllerStatus,
-} from "@/app/_components/agent-chat";
+import { ComposerFooterControls } from "@/app/_components/chat/composer-footer-controls";
 import { useChatShell } from "@/app/_components/chat-shell-context";
 import { HarpyLogo } from "@/app/_components/harpy-logo";
 import { HarpyWordmark } from "@/app/_components/harpy-wordmark";
 import { ChatComposer } from "@/components/chat/composer";
+import { showRequestError } from "@/components/harpy/show-request-error";
 import { getChatMessageLengthError } from "@/lib/chat/limits";
 import {
   createProvisionalChatId,
   writePendingChatMessage,
 } from "@/lib/chat/provisional-chat";
 import { filesToAttachments, writePendingAttachments } from "@/lib/chat/attachments";
-import type { SetupStatus } from "@/lib/chat/types";
-
-const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
-  isBusy: false,
-  isDisabled: false,
-  isEmpty: true,
-};
+import { getSetupDisabledReason } from "@/lib/chat/setup-reason";
 
 export function HomeChatPage() {
   const {
@@ -34,20 +25,17 @@ export function HomeChatPage() {
   } = useChatShell();
   const [draft, setDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [clientError, setClientError] = useState<string | null>(null);
-  const [dismissedError, setDismissedError] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const setupReady = setupStatus.appReady;
   const pathname = usePathname();
   const router = useRouter();
-  const toastError = clientError && dismissedError !== clientError ? clientError : null;
 
   useEffect(() => {
     setActiveChatId(null);
   }, [setActiveChatId]);
 
   useEffect(() => {
-    if (pathname === "/") {
+    if (pathname === "/chat") {
       submittingRef.current = false;
       setSubmitting(false);
     }
@@ -66,10 +54,6 @@ export function HomeChatPage() {
     }
   }, [viewer]);
 
-  useEffect(() => {
-    setDismissedError(null);
-  }, [clientError]);
-
   const handleSubmit = useCallback(
     async (text: string, files: File[]) => {
       const message = text.trim();
@@ -80,24 +64,21 @@ export function HomeChatPage() {
 
       if (!message) {
         if (files.length > 0) {
-          setClientError("Add a short message to send with your files.");
+          showRequestError("Add a short message to send with your files.");
         }
         return;
       }
 
-      setClientError(null);
-
       const lengthError = getChatMessageLengthError(message);
 
       if (lengthError) {
-        setClientError(lengthError);
+        showRequestError(lengthError);
         return;
       }
 
       if (!setupReady) {
-        setClientError(
-          getHomeComposerDisabledReason({ setupStatus, submitting }) ??
-            "Finish setup before chatting.",
+        showRequestError(
+          getSetupDisabledReason(setupStatus) ?? "Finish setup before chatting.",
         );
         return;
       }
@@ -118,7 +99,7 @@ export function HomeChatPage() {
         submittingRef.current = false;
         setSubmitting(false);
         setDraft(message);
-        setClientError("Failed to start chat.");
+        showRequestError("Failed to start chat.");
         return;
       }
 
@@ -129,8 +110,8 @@ export function HomeChatPage() {
             await filesToAttachments(files),
           );
           if (!stored) {
-            setClientError(
-              "Those files are too large to carry from the start page — open the chat and attach them there.",
+            showRequestError(
+              "Those files are too large to carry from the start page. Open the chat and attach them there.",
             );
           }
         } catch {
@@ -153,24 +134,14 @@ export function HomeChatPage() {
   );
 
   const composerDisabled = !setupReady;
-  const composerDisabledReason = getHomeComposerDisabledReason({
-    setupStatus,
-    submitting,
-  });
+  const composerDisabledReason = getSetupDisabledReason(setupStatus) ?? (submitting ? "Preparing chat." : undefined);
 
-  if (pathname !== "/") {
+  if (pathname !== "/chat") {
     return null;
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col pt-14 md:pt-8">
-      {toastError ? (
-        <ErrorToast
-          message={toastError}
-          onDismiss={() => setDismissedError(toastError)}
-        />
-      ) : null}
-
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col justify-between px-4 pt-8 pb-4 sm:px-6 sm:pb-6">
         <div className="flex min-h-0 flex-1 items-center justify-center pb-20 sm:pb-[12vh]">
           <div className="w-full max-w-2xl space-y-5 sm:space-y-7 md:space-y-8">
@@ -183,12 +154,10 @@ export function HomeChatPage() {
               disabled={composerDisabled}
               disabledReason={composerDisabledReason}
               footerStart={<ComposerFooterControls setupStatus={setupStatus} />}
-              isBusy={IDLE_CONTROLLER_STATUS.isBusy}
               isPreparing={submitting}
               onChange={setDraft}
               onStop={() => {}}
               onSubmit={handleSubmit}
-              placeholder="Ask anything..."
               value={draft}
             />
           </div>
@@ -196,38 +165,4 @@ export function HomeChatPage() {
       </div>
     </div>
   );
-}
-
-function getHomeComposerDisabledReason({
-  setupStatus,
-  submitting,
-}: {
-  readonly setupStatus: SetupStatus;
-  readonly submitting: boolean;
-}) {
-  if (!setupStatus.databaseConfigured) {
-    return "Connect Neon Postgres before chatting.";
-  }
-
-  if (!setupStatus.databaseSchemaReady) {
-    return "Run database migrations: vercel env run -e production -- pnpm db:migrate.";
-  }
-
-  if (!setupStatus.authReady) {
-    const missing = setupStatus.missing.length
-      ? ` Missing: ${setupStatus.missing.join(", ")}.`
-      : "";
-
-    return `Finish auth setup before chatting.${missing}`;
-  }
-
-  if (!setupStatus.rateLimitReady) {
-    return "Provision Upstash Redis before chatting.";
-  }
-
-  if (submitting) {
-    return "Preparing chat.";
-  }
-
-  return undefined;
 }

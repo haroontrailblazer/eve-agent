@@ -19,10 +19,10 @@ Use this skill to keep the template's web chat feeling like a polished dashboard
 ## Cache Components And PPR Basics
 
 - Keep `cacheComponents: true` enabled in `next.config.ts`. Treat the chat route as a static shell with dynamic data streamed into Suspense boundaries.
-- Keep the shell cheap and deterministic. Do not make `app/(chat)/layout.tsx` wait on auth, database, chat history, or per-chat data before rendering the shell.
-- Pass cheap initial state into `AgentChatShell`: empty history, `initialNextCursor: null`, `viewer: null`, and `getInitialSetupStatus()`.
-- Load expensive or request-bound data inside hidden Suspense children: `ResolvedChatBootstrap` for setup/viewer/sidebar history and `ExistingChat` for active chat data.
-- Use sync components to hand resolved server data to the client shell. `AgentChatBootstrapSync` should update setup status, viewer, and history. `AgentChatRouteSync` should update the active chat for the current route.
+- Keep the shell cheap and deterministic. Do not make `app/(app)/layout.tsx` wait on auth, database, chat history, or per-chat data before rendering the shell.
+- The `(app)` layout renders `AppShell` (`app/_components/app-shell.tsx`) with only `getInitialSetupStatus()`. `AppShell` starts with empty history, no cursor and `viewer: null`, and renders `AppSidebar` (`app/_components/app-sidebar.tsx`), whose chat list is `ChatHistoryGroup` (`app/_components/chat-history-group.tsx`).
+- Load expensive or request-bound data inside hidden Suspense children: `ResolvedAppBootstrap` in the `(app)` layout for setup, viewer and sidebar history, and `ExistingChat` in `app/(app)/chat/[id]/page.tsx`, which only answers a missing chat with `notFound()`.
+- Use a sync component to hand resolved server data to the client shell: `AgentChatBootstrapSync` updates setup status, viewer, history and `slackConfigured`. Never hand chat data to the client through a route render: on back and forward Next can reuse a stale cached copy of it. `SessionChatPage` loads the chat itself with a no-store fetch of `/api/chats/:id` (`lib/chat/chat-load.ts`).
 - Keep Suspense fallbacks `null` for these sync boundaries when the visible shell already has stable placeholders. Do not add loading panels that push the chat frame around.
 - Do not call `notFound()` until the dynamic boundary has enough real viewer/setup/chat data to prove the chat is inaccessible. The outer shell should still render while that decision is loading.
 - Keep root and session routes visually distinct but structurally compatible. The root page can center the composer; the session page can pin it near the bottom. Both should live inside the same shell.
@@ -30,8 +30,8 @@ Use this skill to keep the template's web chat feeling like a polished dashboard
 
 ## Static Shell And Hydration
 
-- Preserve the shell-first strategy. `AgentChatShell` should paint the sidebar frame, top controls, and route body before auth, setup, or chat history finishes loading.
-- Keep bootstrap data out of the blocking route path. Use hidden Suspense sync components to hydrate setup status, viewer, sidebar history, and active chat data.
+- Preserve the shell-first strategy. `AppShell` should paint the sidebar frame, top controls, and route body before auth, setup, or chat history finishes loading.
+- Keep bootstrap data out of the blocking route path. Use hidden Suspense sync components to hydrate setup status, viewer and sidebar history. Active chat data comes from the chat page's own no-store fetch.
 - Preserve theme pre-hydration. Theme should be resolved before React paints so dark/light mode does not flash or mismatch.
 - Preserve auth display pre-hydration. The `eve_logged_in` cookie is a display hint only; the head script sets `data-eve-auth-display` so CSS can hide the wrong signed-in/signed-out branch before viewer data resolves.
 - Never treat the auth hint as authority. Server actions, chat loading, Eve auth, and rate limits must use the real Better Auth session.

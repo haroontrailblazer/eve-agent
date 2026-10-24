@@ -53,12 +53,12 @@ const markdownComponents: MarkdownProps["components"] = {
     />
   ),
   p: ({ className, ...props }) => (
-    <p className={cn("px-3 text-[15px] leading-6 text-foreground", className)} {...props} />
+    <p className={cn("px-3 text-body leading-6 text-foreground", className)} {...props} />
   ),
   ul: ({ className, ...props }) => (
     <ul
       className={cn(
-        "flex list-disc flex-col gap-1.5 px-3 pl-8 text-[15px] leading-6 text-foreground",
+        "flex list-disc flex-col gap-1.5 px-3 pl-8 text-body leading-6 text-foreground",
         className,
       )}
       {...props}
@@ -67,19 +67,19 @@ const markdownComponents: MarkdownProps["components"] = {
   ol: ({ className, ...props }) => (
     <ol
       className={cn(
-        "flex list-decimal flex-col gap-1.5 px-3 pl-8 text-[15px] leading-6 text-foreground",
+        "flex list-decimal flex-col gap-1.5 px-3 pl-8 text-body leading-6 text-foreground",
         className,
       )}
       {...props}
     />
   ),
   li: ({ className, ...props }) => (
-    <li className={cn("pl-1 text-[15px] leading-6 text-foreground", className)} {...props} />
+    <li className={cn("pl-1 text-body leading-6 text-foreground", className)} {...props} />
   ),
   blockquote: ({ className, ...props }) => (
     <blockquote
       className={cn(
-        "mx-3 border-l-2 border-border pl-3 text-[15px] leading-6 text-muted-foreground",
+        "mx-3 border-l-2 border-border pl-3 text-body leading-6 text-muted-foreground",
         className,
       )}
       {...props}
@@ -118,7 +118,7 @@ const markdownComponents: MarkdownProps["components"] = {
     <img
       alt={alt ?? ""}
       className={cn(
-        "my-3 mx-3 max-h-[28rem] w-auto max-w-[calc(100%-1.5rem)] rounded-xl border border-border",
+        "my-3 mx-3 max-h-112 w-auto max-w-[calc(100%-1.5rem)] rounded-xl border border-border",
         className,
       )}
       {...props}
@@ -130,7 +130,7 @@ export const Markdown = memo(function Markdown({ className, ...props }: Markdown
   return (
     <Streamdown
       className={cn(
-        "min-w-0 text-[15px] leading-6 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+        "min-w-0 text-body leading-6 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className,
       )}
       components={markdownComponents}

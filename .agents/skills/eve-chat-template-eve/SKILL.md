@@ -1,60 +1,60 @@
 ---
 name: eve-chat-template-eve
-description: Work safely on Eve-specific internals in the Eve chat template. Use when changing the Eve agent, withEve routes, eveChannel auth, useEveAgent, ClientSession/SessionState, persisted event logs, stream/resume behavior, connection authorization, Vercel Connect MCP connections, local Eve tools, or upstream Eve API assumptions.
+description: Work safely on eve-specific internals in harpy. Use when changing the eve agent, withEve routes, eveChannel auth, useEveAgent and useHarpyChat, persisted chat events, stream and resume behavior, connection authorization, Vercel Connect MCP connections, local eve tools, brand scoping, or upstream eve API assumptions.
 ---
 
-# Eve Template Runtime
+# harpy eve runtime
 
 ## Overview
 
-Use this skill to preserve the Eve protocol and durable-session invariants while changing the chat template.
+harpy is a private social media control room on eve 0.82 and Next.js 16. Use this skill to preserve the eve protocol and the durable-session invariants while changing the chat.
 
-## First Pass
+## First pass
 
-- Read `AGENTS.md` first. It requires reading the relevant guide under `node_modules/eve/dist/docs/public/` before writing code.
-- Read `docs/how-the-chatbot-works.md` for architecture changes and `docs/setup-and-deploy.md` for setup, auth, storage, or deployment changes.
-- Search with `rg "useEveAgent|ClientSession|SessionState|message.appended|authorization.required|eveSession|chat_event|streamIndex|continuationToken|defineMcpClientConnection|defineTool"`.
-- Keep Eve runtime code separate from product shell code: `agent/` defines agent behavior; `app/_components/agent-chat.tsx` bridges Eve to the web UI; `lib/db/*` persists app state.
+- Read `AGENTS.md` first. It requires reading the relevant guide under `node_modules/eve/docs/` before writing code.
+- Read `docs/how-the-chatbot-works.md` for architecture changes and `docs/setup-and-deploy.md` for setup, auth, storage or deployment changes.
+- Search with `rg "useEveAgent|useHarpyChat|eve_event_id|event_index|authorization.required|defineMcpClientConnection|defineTool|brandId"`.
+- Keep eve runtime code separate from product shell code: `agent/` defines agent behavior; `app/_components/chat/use-harpy-chat.ts` bridges eve to the web UI; `lib/db/*` persists app state.
 
-## Core Model
+## Core model
 
-- Treat an app chat row and an Eve session as different things. The app row owns URL, title, user ownership, `pendingUserMessage`, stored `eveSession`, and event rows. Eve owns the remote durable session and stream cursor.
-- Do not confuse `chat_event.eventIndex` with `SessionState.streamIndex`. The first orders local Postgres rows; the second resumes `/eve/v1/session/:sessionId/stream`.
-- Preserve same-origin Eve routes mounted by `withEve(nextConfig)`: `POST /eve/v1/session`, `POST /eve/v1/session/:sessionId`, and `GET /eve/v1/session/:sessionId/stream?startIndex=n`.
-- Keep `betterAuthEveAuth`, `localDev()`, and `vercelOidc()` in the Eve channel unless deliberately changing local, browser, or Vercel auth behavior.
+- An app chat row and an eve session are different things. The row owns URL, title, owner, pending message, stored session and event rows. eve owns the remote durable session and its stream.
+- `chat_event.event_index` orders local Postgres rows. It is not a stream cursor.
+- Preserve the same-origin eve routes mounted by `withEve(nextConfig)`: `POST /eve/v1/session`, `POST /eve/v1/session/:sessionId` and `GET /eve/v1/session/:sessionId/stream`.
+- Keep `betterAuthEveAuth`, `localDev()` and `vercelOidc()` in the eve channel unless deliberately changing local, browser or Vercel auth behavior.
+- The web principal carries `attributes.brandId` from `lib/eve-auth.ts`. Tools read the brand from verified `auth.attributes` and never accept `brandId` or any tenant id as input.
 
-## Persistence And Resume
+## Hook-native chat rules
 
-- Persist `SessionState` immediately after Eve returns `sessionId` and `continuationToken`; do not wait for the stream to finish.
-- Persist each stream event as it arrives, then use the final snapshot as the canonical cleanup pass.
-- Upsert events by local `eventIndex`; on final snapshot, delete rows beyond the final event length.
-- Keep `pendingUserMessage` for interruption recovery. Mark it before sending, consume it once in the session page, hide it after a settled event, and clear it after snapshot or authorization skip.
-- When preserving initial events, merge by prefix and compare JSON structurally. Do not rely on `JSON.stringify` key order.
-- Reset per-chat refs on route changes: event index, known initial events, stream events, resumed events, local events, pending bubbles, resume-started flags, and finalize timers.
+- Use `useEveAgent` from `eve/react` directly, with `initialEvents`, `initialSession`, `resume: chat.session !== undefined` and `followIdle: false`. Do not wrap it in a custom `ClientSession`, and do not add a continuation token or synthetic events.
+- `useEveAgent` reads its options once, so mount the chat with `key={chat.id}`.
+- Persist stream events from `onEvent` in batches. Dedupe by eve's `meta.id`, stored in `chat_event.eve_event_id` under a unique `(chat_id, eve_event_id)` index. The first occurrence of a repeated id wins.
+- Save the session from `onSessionChange` only when the session id changes. `onSessionChange` fires on every accepted event.
+- Finalize in `onFinish`, and only if this mount saw new events. A resume of an already settled turn must not reorder the sidebar.
+- Auto-send the first message only through `shouldAutoSendPending`: local handoff marker present, chat not legacy, no session yet, non-empty pending message.
+- A legacy chat (created before 0.82) is read-only and never sends.
+- Skip and Connect go through the hook's `respond` and the authorization card. Never parse assistant text for auth requirements; use `authorization.required` and `authorization.completed` events.
 
 ## Streaming
 
-- `useEveAgent` reduces Eve events into renderable messages; the template wraps it with a custom `ClientSession` to persist and resume sessions.
-- Treat `message.appended.data.messageDelta` as the new text. Treat `messageSoFar`, reduced message text, and rendered parts as cumulative.
-- Read the stream as NDJSON. Buffering until newline is normal parsing, not app-level response buffering.
-- Consider a turn settled on `session.completed`, `session.failed`, or `session.waiting`. Treat `authorization.required` as a blocked state for normal text input.
-- On disconnect, reconnect from the next unread remote stream index. On refresh mid-turn, resume from saved `activeChat.session` and layer resumed events until the final snapshot catches up.
+- Treat `message.appended.data.messageDelta` as new text. Treat `messageSoFar`, reduced message text and rendered parts as cumulative.
+- A turn is settled on `session.completed`, `session.failed` or `session.waiting`. `authorization.required` is a blocked state for normal text input.
+- Do not split server events just to make coarse deltas look token-level. Smooth only at the UI layer.
 
-## Connections And Tools
+## Connections and tools
 
-- Define local tools in `agent/tools/<snake_case>.ts` with `defineTool(...)`. Tool filenames become runtime tool names, so keep them ASCII snake_case.
-- Define Vercel Connect-backed MCP connections in `agent/connections/<name>.ts` with `defineMcpClientConnection(...)` and `connect(process.env.ENV_NAME ?? "local-name")`.
-- Treat composer connection toggles as per-turn intent, not connector provisioning or OAuth state.
-- Do not parse assistant text for auth requirements. Use `authorization.required` and `authorization.completed` events.
-- Implement Skip as a structured outcome: stop the stream, synthesize declined authorization completion plus `session.waiting`, apply those local events to the session, persist them, and clear pending input.
+- Define local tools in `agent/tools/<snake_case>.ts` with `defineTool(...)`. The filename becomes the tool name, so keep it ASCII snake_case.
+- Define Vercel Connect MCP connections in `agent/connections/<name>.ts` with `defineMcpClientConnection(...)` and `connect(process.env.ENV_NAME ?? "local-name")`.
+- Composer connection toggles are per-turn intent, not provisioning or OAuth state.
+- MCP tokens and OAuth state are encrypted with `SOCIAL_TOKEN_ENCRYPTION_KEY`. Never write a secret to Postgres in plaintext.
+- Add no eve `defineSchedule` files (Vercel Hobby fails deploys on crons that run more than once a day).
+- Never set `temperature`, `top_p` or `top_k`, and never use reasoning `"none"` or `"minimal"` with Opus models.
 
-## Upstream Signals
+## Upstream signals
 
-- Prefer upstreaming generic Eve lifecycle needs: `onSessionStarted(session)`, hook-level resume APIs, durable event persistence adapters, authorization continuation helpers, structured connection policy, and stream debug helpers.
-- Keep template-specific concerns in the template: Better Auth UX, Neon/Drizzle schema, Upstash limits, sidebar pagination, Notion UI toggles, and setup docs.
-- Do not split server events just to make coarse provider deltas look token-level. Preserve wire semantics and smooth only at the UI layer when needed.
+- Prefer upstreaming generic eve lifecycle needs. Keep harpy-specific concerns in harpy: Better Auth and the allowlist, the Neon and Drizzle schema, Upstash limits, brands, Blob media and setup docs.
 
 ## Verification
 
-- Run `pnpm typecheck` for protocol/type changes and `pnpm build` before opening a PR that touches runtime, routes, or docs examples.
-- Manually verify first message, follow-up send, refresh during a response, authorization Connect/Skip, disabled input while auth is pending, and Notion enabled/disabled turns when those flows are touched.
+- Run `pnpm test`, `pnpm typecheck` and `pnpm build`. Run `pnpm eve:build` too, or `pnpm exec eve build --skip-sandbox-prewarm` on a machine without Docker.
+- For chat changes, walk checklist M1 in `docs/setup-and-deploy.md` (first message, follow-up, refresh mid-stream, stop, authorization Connect and Skip, attachments, image generation and editing, legacy chats).

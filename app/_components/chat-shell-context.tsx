@@ -1,17 +1,15 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
+import type { EnabledConnections } from "@/lib/chat/client-context";
 import type { ChatListItem, SetupStatus, Viewer } from "@/lib/chat/types";
 
-export type EnabledConnections = {
-  readonly linear: boolean;
-  readonly notion: boolean;
-  readonly sentry: boolean;
-};
+export type { EnabledConnections } from "@/lib/chat/client-context";
 
+// Shared app state from AppShell. Sidebar open state is not here: read it with
+// useSidebar() from components/ui/sidebar.
 type ChatShellContextValue = {
   readonly activeChatId: string | null;
-  readonly desktopSidebarOpen: boolean;
   readonly enabledConnections: EnabledConnections;
   readonly removeChat: (chatId: string) => void;
   readonly requestSignIn: (draft?: string) => void;
@@ -21,8 +19,10 @@ type ChatShellContextValue = {
     enabled: boolean,
   ) => void;
   readonly setupStatus: SetupStatus;
+  // SLACK_CONNECTOR is set, so the Slack channel is wired up. The sidebar and
+  // the Channels page both read it from here.
+  readonly slackConfigured: boolean;
   readonly touchChat: (chat: ChatListItem) => void;
-  readonly updateChatTitle: (chatId: string, title: string) => void;
   readonly viewer: Viewer | null;
 };
 
@@ -42,7 +42,7 @@ export function useChatShell() {
   const value = useContext(ChatShellContext);
 
   if (!value) {
-    throw new Error("useChatShell must be used inside AgentChatShell.");
+    throw new Error("useChatShell must be used inside AppShell.");
   }
 
   return value;

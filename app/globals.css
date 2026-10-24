@@ -1,7 +1,10 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 @source "../node_modules/streamdown/dist/*.js";
 
-@custom-variant dark (&:where(.dark, .dark *));
+/* `dark:` applies inside .dark, but not inside a .light region nested in it,
+   so the light column on /design stays light when the app is dark. */
+@custom-variant dark (&:where(.dark, .dark *):not(:where(.dark .light, .dark .light *)));
 
 @theme inline {
   --color-background: var(--background);
@@ -22,12 +25,49 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-status-draft: var(--status-draft);
+  --color-status-review: var(--status-review);
+  --color-status-scheduled: var(--status-scheduled);
+  --color-status-posted: var(--status-posted);
+  --color-status-failed: var(--status-failed);
+  --color-platform-x: var(--platform-x);
+  --color-platform-linkedin: var(--platform-linkedin);
+  --color-platform-threads: var(--platform-threads);
+  --color-platform-whatsapp: var(--platform-whatsapp);
+  --color-platform-slack: var(--platform-slack);
+  --color-overlay: var(--overlay);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, "SFMono-Regular", "Menlo", "Monaco", "Consolas", monospace;
+  --radius-2xl: calc(var(--radius) + 8px);
+  --shadow-raised: var(--raised-shadow);
+
+  /* Type scale: size, then line height. */
+  --text-display: 2rem;
+  --text-display--line-height: 2.5rem;
+  --text-title: 1.5rem;
+  --text-title--line-height: 2rem;
+  --text-heading: 1.0625rem;
+  --text-heading--line-height: 1.5rem;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.5rem;
+  --text-small: 0.8125rem;
+  --text-small--line-height: 1.125rem;
+  --text-meta: 0.6875rem;
+  --text-meta--line-height: 1rem;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-wordmark: var(--font-orbitron);
 }
 
 :root,
@@ -45,7 +85,8 @@
   --secondary: oklch(0.94 0 0);
   --secondary-foreground: oklch(0.19 0 0);
   --muted: oklch(0.94 0 0);
-  --muted-foreground: oklch(0.6 0 0);
+  /* Darker than the stock 0.6 so muted text meets AA on the page and cards. */
+  --muted-foreground: oklch(0.54 0 0);
   --accent: oklch(0.94 0 0);
   --accent-foreground: oklch(0.19 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -53,6 +94,43 @@
   --input: oklch(0.916 0 0);
   --ring: oklch(0.708 0 0);
   --radius: 0.625rem;
+
+  /* Functional color: glyphs and dots only, never surface fills. */
+  --status-draft: var(--muted-foreground);
+  --status-review: oklch(0.62 0.13 65);
+  --status-scheduled: oklch(0.55 0.17 255);
+  --status-posted: oklch(0.58 0.14 150);
+  --status-failed: var(--destructive);
+  --platform-x: var(--foreground);
+  --platform-threads: var(--foreground);
+  --platform-linkedin: #0A66C2;
+  --platform-whatsapp: #128C7E;
+  --platform-slack: #4A154B;
+
+  --overlay: oklch(0 0 0 / 50%);
+  --raised-shadow: 0 1px 2px oklch(0 0 0 / 0.06), 0 4px 12px oklch(0 0 0 / 0.05);
+
+  --sidebar: oklch(0.971 0 0);
+  --sidebar-foreground: oklch(0.16 0 0);
+  --sidebar-primary: oklch(0.19 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.94 0 0);
+  --sidebar-accent-foreground: oklch(0.19 0 0);
+  --sidebar-border: oklch(0.916 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* The silver wordmark, darkened so it reads on the light page. */
+  --wordmark-gradient: linear-gradient(
+    180deg,
+    oklch(0.45 0 0) 0%,
+    oklch(0.30 0 0) 14%,
+    oklch(0.50 0 0) 38%,
+    oklch(0.18 0 0) 50%,
+    oklch(0.42 0 0) 63%,
+    oklch(0.28 0 0) 86%,
+    oklch(0.40 0 0) 100%
+  );
+  --wordmark-shadow: drop-shadow(0 1px 0 oklch(1 0 0 / 0.9)) drop-shadow(0 1px 1px oklch(0 0 0 / 0.15));
 }
 
 .dark {
@@ -75,10 +153,57 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+
+  --status-draft: var(--muted-foreground);
+  --status-review: oklch(0.80 0.15 80);
+  --status-scheduled: oklch(0.70 0.14 250);
+  --status-posted: oklch(0.74 0.16 150);
+  --status-failed: var(--destructive);
+  --platform-x: var(--foreground);
+  --platform-threads: var(--foreground);
+  --platform-linkedin: #0A66C2;
+  --platform-whatsapp: #25D366;
+  --platform-slack: #9961A6;
+
+  --overlay: oklch(0 0 0 / 50%);
+  --raised-shadow: 0 1px 2px oklch(0 0 0 / 0.4), 0 4px 12px oklch(0 0 0 / 0.3);
+
+  --sidebar: oklch(0.145 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.922 0 0);
+  --sidebar-primary-foreground: oklch(0.205 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+
+  --wordmark-gradient: linear-gradient(
+    180deg,
+    oklch(0.97 0 0) 0%,
+    oklch(1 0 0) 14%,
+    oklch(0.82 0 0) 38%,
+    oklch(0.542 0 0) 50%,
+    oklch(0.798 0 0) 63%,
+    oklch(1 0 0) 86%,
+    oklch(0.855 0 0) 100%
+  );
+  --wordmark-shadow: drop-shadow(0 2px 2px oklch(0 0 0 / 0.45)) drop-shadow(0 0 1px oklch(1 0 0 / 0.25));
 }
 
-* {
-  border-color: var(--border);
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
 }
 
 html {
@@ -90,34 +215,30 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), var(--font-sans);
+  font-family: var(--font-sans);
 }
 
-code,
-kbd,
-pre,
-samp {
-  font-family: var(--font-geist-mono), var(--font-mono);
-}
-
-button,
-input,
-textarea {
-  font-family: inherit;
-}
-
-button:not(:disabled),
-[role="button"]:not([aria-disabled="true"]) {
-  cursor: pointer;
-}
-
-button:disabled,
-[role="button"][aria-disabled="true"] {
-  cursor: not-allowed;
-}
-
-html[data-eve-chat-sidebar="closed"] [data-desktop-sidebar] {
+/* A collapsed desktop sidebar on the first paint. lib/sidebar-hint.ts sets the
+   attribute from the cookie before hydration, while React still renders the
+   sidebar open. Unlayered on purpose, so it beats the Tailwind utilities on
+   the shadcn sidebar. AppShell clears the attribute when the sidebar opens. */
+html[data-harpy-sidebar="collapsed"] [data-slot="sidebar-gap"] {
   width: 0;
+}
+
+html[data-harpy-sidebar="collapsed"] [data-slot="sidebar-container"] {
+  left: calc(var(--sidebar-width) * -1);
+}
+
+.harpy-wordmark {
+  font-family: var(--font-orbitron);
+  letter-spacing: 0.08em;
+  background-image: var(--wordmark-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter: var(--wordmark-shadow);
 }
 
 .shimmer-text {
@@ -145,13 +266,27 @@ html[data-eve-chat-sidebar="closed"] [data-desktop-sidebar] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shimmer-text {
+  .shimmer-text,
+  .animate-spin,
+  .animate-pulse {
     animation: none;
+  }
+
+  /* Every other animation and transition (the sidebar, sheets, dialogs,
+     popovers, menus and tooltips) finishes at once. The duration is tiny
+     rather than zero, so Radix still gets animationend and overlays close. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
-/* Brand mark (HarpyLogo): the logo stays fully visible; each cube face pops
-   (a quick bounce) in sequence — top, then right, then left — and repeats. */
+/* Brand mark (HarpyLogo): the logo stays fully visible; each part pops (a
+   quick bounce) in sequence, left wing, then the orb, then the right wing, and
+   repeats. */
 .harpy-logo__part {
   transform-box: view-box;
   will-change: transform;

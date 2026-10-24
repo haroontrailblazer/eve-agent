@@ -20,6 +20,7 @@ import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getChatMessageLength, MAX_CHAT_MESSAGE_CHARS } from "@/lib/chat/limits";
+import { routeAttachment } from "@/lib/media/attachment-policy";
 import { filterSkills, type SkillSummary } from "@/lib/skills/catalog";
 import { cn } from "@/lib/utils";
 
@@ -30,8 +31,6 @@ const SLASH_QUERY_RE = /^\/([\w-]*)$/;
 // once it resolves to a real skill, like claude.ai.
 const LEADING_COMMAND_RE = /^\/([\w-]+)(?=\s|$)/;
 
-const MAX_ATTACHMENT_MB = 10;
-const MAX_ATTACHMENT_BYTES = MAX_ATTACHMENT_MB * 1024 * 1024;
 // Paste more than this many characters and it becomes a text attachment instead
 // of flooding the input — the way claude.ai handles big pastes.
 const PASTE_TO_FILE_CHARS = 1800;
@@ -48,7 +47,7 @@ export function ChatComposer({
   onChange,
   onStop,
   onSubmit,
-  placeholder = "Ask eve anything...",
+  placeholder = "Ask harpy anything...",
   value,
 }: {
   readonly autoFocus?: boolean;
@@ -152,17 +151,21 @@ export function ChatComposer({
 
   const addFiles = useCallback((incoming: readonly File[]) => {
     const accepted: File[] = [];
-    let hasOversized = false;
+    // The same limits the send path applies: images up to 20 MB, other files
+    // up to 3 MB.
+    const rejections = new Set<string>();
 
     for (const file of incoming) {
-      if (file.size > MAX_ATTACHMENT_BYTES) {
-        hasOversized = true;
+      const route = routeAttachment({ size: file.size, type: file.type });
+
+      if (route.kind === "reject") {
+        rejections.add(route.message);
       } else {
         accepted.push(file);
       }
     }
 
-    setAttachmentError(hasOversized ? `Each file must be under ${MAX_ATTACHMENT_MB} MB.` : null);
+    setAttachmentError(rejections.size > 0 ? [...rejections].join(" ") : null);
 
     if (accepted.length > 0) {
       setFiles((current) => [...current, ...accepted]);
@@ -303,7 +306,7 @@ export function ChatComposer({
   const form = (
     <form
       className={cn(
-        "relative min-w-0 rounded-[14px] border border-border/80 bg-card/95 shadow-sm transition-colors focus-within:border-border focus-within:ring-[1px] focus-within:ring-foreground/5 dark:bg-muted/45 dark:focus-within:ring-white/5",
+        "relative min-w-0 rounded-xl border border-border/80 bg-card/95 shadow-sm transition-colors focus-within:border-border focus-within:ring-1 focus-within:ring-foreground/5 dark:bg-muted/45 dark:focus-within:ring-white/5",
         className,
       )}
       data-chat-composer
@@ -314,7 +317,7 @@ export function ChatComposer({
       </label>
       {skillMenuOpen ? (
         <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-lg">
-          <div className="flex items-center gap-1.5 border-b border-border/60 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="flex items-center gap-1.5 border-b border-border/60 px-3 py-1.5 text-meta font-medium uppercase tracking-wide text-muted-foreground">
             <SparklesIcon className="size-3" />
             Skills
           </div>
@@ -333,14 +336,14 @@ export function ChatComposer({
                   onMouseEnter={() => setActiveSkillIndex(index)}
                   type="button"
                 >
-                  <span className="shrink-0 rounded bg-background px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                  <span className="shrink-0 rounded bg-background px-1.5 py-0.5 font-mono text-meta text-muted-foreground">
                     /{skill.slug}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                     {skill.description || skill.name}
                   </span>
                   {skill.source === "custom" ? (
-                    <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-500">
+                    <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-meta font-medium text-muted-foreground">
                       custom
                     </span>
                   ) : null}
@@ -370,7 +373,7 @@ export function ChatComposer({
         {highlightedCommand !== null && !textareaDisabled ? (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 max-h-32 overflow-hidden px-3 pt-3 pb-1 text-base leading-6 break-words whitespace-pre-wrap select-none sm:px-4 md:text-[15px]"
+            className="pointer-events-none absolute inset-0 max-h-32 overflow-hidden px-3 pt-3 pb-1 text-base leading-6 break-words whitespace-pre-wrap select-none sm:px-4 md:text-body"
             ref={highlightRef}
           >
             <span className="text-muted-foreground">{highlightedCommand}</span>
@@ -380,7 +383,7 @@ export function ChatComposer({
         <textarea
           autoFocus={autoFocus}
           className={cn(
-            "max-h-32 min-h-12 w-full resize-none bg-transparent px-3 pt-3 pb-1 text-base leading-6 outline-none placeholder:text-muted-foreground/45 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 md:text-[15px] dark:placeholder:text-muted-foreground/60",
+            "max-h-32 min-h-12 w-full resize-none bg-transparent px-3 pt-3 pb-1 text-base leading-6 outline-none placeholder:text-muted-foreground/45 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 md:text-body dark:placeholder:text-muted-foreground/60",
             isCommandHighlighted ? "text-transparent caret-foreground" : undefined,
           )}
           data-chat-composer-input

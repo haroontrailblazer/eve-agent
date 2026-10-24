@@ -1,9 +1,10 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
+import { getAppOrigin } from "@/lib/app-origin";
 import { getMcpConnection } from "@/lib/db/mcp";
 import { callMcpTool, errorMessage, isUnauthorizedError, type McpAuth } from "@/lib/mcp-client";
 import { resolveDbUserId } from "@/lib/mcp-context";
-import { DbOAuthProvider, getAppOrigin } from "@/lib/mcp-oauth";
+import { DbOAuthProvider } from "@/lib/mcp-oauth";
 
 export default defineTool({
   description:
@@ -33,6 +34,16 @@ export default defineTool({
       return {
         ok: false,
         message: `No MCP URL saved for ${platform}. Connect it first with its URL.`,
+      };
+    }
+
+    // Its saved token or sign-in no longer decrypts, so calling now would go
+    // out without it. Only a fresh connect_mcp recovers the connection.
+    if (connection.secretsUnreadable) {
+      return {
+        ok: false,
+        needsReconnect: true,
+        message: `The saved sign-in for ${platform} can't be read anymore. Connect it again with connect_mcp.`,
       };
     }
 

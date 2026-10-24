@@ -1,14 +1,18 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
-import { saveGeneratedImage } from "@/lib/db/images";
 import { generateOrEditImage, type SourceImage } from "@/lib/image-gen";
 import { errorMessage } from "@/lib/mcp-client";
-import { resolveDbUserId } from "@/lib/mcp-context";
-import { getAppOrigin } from "@/lib/mcp-oauth";
+import { resolveBrandContext } from "@/lib/mcp-context";
+import { saveMediaAsset } from "@/lib/media/assets";
+import { IMAGE_GENERATIONS_PER_DAY } from "@/lib/media/limits";
+import { loadSourceImage } from "@/lib/media/load-source-image";
+import { enforceRateLimit, RateLimitError } from "@/lib/rate-limit";
+
+const DAY_SECONDS = 86_400;
 
 export default defineTool({
   description:
-    "Generate an image from a text prompt, or edit/enhance an existing image. To create a new image, give a descriptive `prompt`. To edit or enhance an image, also pass `sourceImageUrl` — a public image URL, or the URL of an image you generated earlier — and describe the change in `prompt` (e.g. 'make the background a sunset', 'enhance to higher quality', 'add a hat'). Returns a hosted image URL and a ready-to-use markdown snippet. ALWAYS include the returned `markdown` verbatim in your reply so the user sees the image inline.",
+    "Generate an image from a text prompt, or edit/enhance an existing image. To create a new image, give a descriptive `prompt`. To edit or enhance an image, also pass `sourceImageUrl`, the url of an image the user attached or an image you generated earlier, and describe the change in `prompt` (e.g. 'make the background a sunset', 'enhance to higher quality', 'add a hat'). Returns a hosted image URL and a ready-to-use markdown snippet. ALWAYS include the returned `markdown` verbatim in your reply so the user sees the image inline.",
   inputSchema: z.object({
     prompt: z
       .string()
@@ -20,45 +24,49 @@ export default defineTool({
       .string()
       .optional()
       .describe(
-        "Optional URL of an image to edit/enhance. Omit to generate a brand-new image from the prompt alone.",
+        "Optional url of an image to edit/enhance: an attached image's url or a url this tool returned. Other websites are not supported. Omit to generate a brand-new image from the prompt alone.",
       ),
   }),
   async execute(input, ctx) {
-    const userId = await resolveDbUserId(ctx);
+    const brandContext = await resolveBrandContext(ctx);
 
-    if (!userId) {
+    if (!brandContext) {
       return { ok: false, message: "You need to be signed in to generate images." };
+    }
+
+    const { brandId, userId } = brandContext;
+
+    try {
+      await enforceRateLimit({
+        key: brandId,
+        limit: IMAGE_GENERATIONS_PER_DAY,
+        prefix: "image:generate",
+        windowSeconds: DAY_SECONDS,
+      });
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        return {
+          ok: false,
+          message: `Image limit reached for today (${IMAGE_GENERATIONS_PER_DAY}). Try again tomorrow.`,
+        };
+      }
+
+      return { ok: false, message: `Couldn't check the image limit: ${errorMessage(error)}` };
     }
 
     let sourceImage: SourceImage | undefined;
 
     if (input.sourceImageUrl) {
-      try {
-        const response = await fetch(input.sourceImageUrl);
+      const loaded = await loadSourceImage(input.sourceImageUrl);
 
-        if (!response.ok) {
-          throw new Error(`fetch returned ${response.status}`);
-        }
-
-        const mediaType = response.headers.get("content-type")?.split(";")[0] ?? "image/png";
-
-        if (!mediaType.startsWith("image/")) {
-          return {
-            ok: false,
-            message: `That URL isn't an image (${mediaType}). Give me a direct link to an image file.`,
-          };
-        }
-
-        sourceImage = {
-          bytes: new Uint8Array(await response.arrayBuffer()),
-          mediaType,
-        };
-      } catch (error) {
+      if (!loaded.ok) {
         return {
           ok: false,
-          message: `Couldn't load the source image at ${input.sourceImageUrl}: ${errorMessage(error)}`,
+          message: `Couldn't load the source image at ${input.sourceImageUrl}: ${loaded.message}`,
         };
       }
+
+      sourceImage = loaded.image;
     }
 
     let generated;
@@ -71,30 +79,30 @@ export default defineTool({
       };
     }
 
-    let id: string;
+    let saved: { readonly id: string; readonly url: string };
     try {
-      id = await saveGeneratedImage({
-        base64: generated.base64,
+      saved = await saveMediaAsset({
+        brandId,
+        bytes: Buffer.from(generated.base64, "base64"),
         mediaType: generated.mediaType,
         prompt: input.prompt,
+        source: "generated",
         userId,
       });
     } catch (error) {
       return { ok: false, message: `Generated the image but couldn't save it: ${errorMessage(error)}` };
     }
 
-    const url = `${getAppOrigin().replace(/\/$/, "")}/api/images/${id}`;
-    const altText = input.prompt.replace(/\s+/g, " ").slice(0, 80);
+    // Brackets would end the markdown alt text early.
+    const altText = input.prompt.replace(/[[\]]/g, "").replace(/\s+/g, " ").slice(0, 80);
 
     return {
       ok: true,
-      imageUrl: url,
-      // Relative src so it resolves against the browser origin regardless of how
-      // getAppOrigin() is configured (avoids a wrong absolute host 404ing).
-      markdown: `![${altText}](/api/images/${id})`,
+      imageUrl: saved.url,
+      markdown: `![${altText}](${saved.url})`,
       message: sourceImage
-        ? `Edited image ready: ${url}`
-        : `Generated image ready: ${url}`,
+        ? `Edited image ready: ${saved.url}`
+        : `Generated image ready: ${saved.url}`,
     };
   },
 });
