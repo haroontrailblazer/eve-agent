@@ -228,6 +228,7 @@ export function AppShell({
       setActiveChatId,
       setConnectionEnabled,
       setupStatus: setupStatusState,
+      slackConfigured,
       touchChat,
       viewer: viewerState,
     }),
@@ -238,6 +239,7 @@ export function AppShell({
       requestSignIn,
       setConnectionEnabled,
       setupStatusState,
+      slackConfigured,
       touchChat,
       viewerState,
     ],
@@ -386,16 +388,12 @@ function ShareChatButton() {
   );
 }
 
+// harpy is private to allowlisted emails, so there is no sign up: only log in.
 function AuthHeaderActions({ onSignIn }: { readonly onSignIn: () => void }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <Button className="h-8 px-3" onClick={onSignIn} type="button" variant="outline">
-        Log in
-      </Button>
-      <Button className="h-8 px-3" onClick={onSignIn} type="button">
-        Sign up
-      </Button>
-    </div>
+    <Button className="h-8 px-3" onClick={onSignIn} type="button" variant="outline">
+      Log in
+    </Button>
   );
 }
 

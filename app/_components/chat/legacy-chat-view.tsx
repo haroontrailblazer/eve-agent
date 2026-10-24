@@ -37,6 +37,7 @@ export function LegacyChatView({ chat }: { readonly chat: ActiveChat }) {
                 isInputOpen={isInputOpen}
                 isStreaming={false}
                 key={message.id}
+                legacy
                 message={message}
                 onCancelTurn={noop}
                 onInputResponses={noop}

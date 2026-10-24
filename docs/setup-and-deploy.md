@@ -70,13 +70,13 @@ Image URLs are unguessable but public, so do not put private images in this stor
 
 ## Local eve build
 
-`pnpm eve:build` initializes the eve sandbox template. On a machine without Docker it falls back to the `just-bash` provider, which needs the `just-bash` package. harpy does not depend on it, so the build fails with "The just-bash sandbox provider requires the `just-bash` package". Skip the sandbox prewarm instead:
+`pnpm eve:build` initializes the eve sandbox template. On a machine without Docker it falls back to the `just-bash` provider. harpy lists `just-bash` as a devDependency, so after `pnpm install` the build works without Docker. Builds on Vercel and on machines with Docker use `pnpm eve:build` unchanged.
+
+As a fallback, if the sandbox prewarm still fails on your machine, skip it:
 
 ```bash
 pnpm exec eve build --skip-sandbox-prewarm
 ```
-
-Builds on Vercel and on machines with Docker use `pnpm eve:build` unchanged.
 
 ## Local Project Link
 

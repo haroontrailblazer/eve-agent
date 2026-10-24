@@ -45,6 +45,7 @@ export function AgentMessage({
   isCancelling,
   isInputOpen,
   isStreaming,
+  legacy = false,
   message,
   onCancelTurn,
   onInputResponses,
@@ -54,6 +55,8 @@ export function AgentMessage({
   readonly isCancelling: boolean;
   readonly isInputOpen: (requestId: string) => boolean;
   readonly isStreaming: boolean;
+  /** A message from a legacy chat: history only, so a pending sign-in is a static line. */
+  readonly legacy?: boolean;
   readonly message: EveMessage;
   readonly onCancelTurn: () => void;
   readonly onInputResponses: (responses: readonly AgentInputResponse[]) => void | Promise<void>;
@@ -110,6 +113,7 @@ export function AgentMessage({
           isInputOpen={isInputOpen}
           isUser={isUser}
           lastTextIndex={lastTextIndex}
+          legacy={legacy}
           messageId={message.id}
           onCancelTurn={onCancelTurn}
           onInputResponses={onInputResponses}
@@ -129,6 +133,7 @@ function AgentMessageParts({
   isInputOpen,
   isUser,
   lastTextIndex,
+  legacy,
   messageId,
   onCancelTurn,
   onInputResponses,
@@ -140,6 +145,7 @@ function AgentMessageParts({
   readonly isInputOpen: (requestId: string) => boolean;
   readonly isUser: boolean;
   readonly lastTextIndex: number;
+  readonly legacy: boolean;
   readonly messageId: string;
   readonly onCancelTurn: () => void;
   readonly onInputResponses: (responses: readonly AgentInputResponse[]) => void | Promise<void>;
@@ -215,6 +221,7 @@ function AgentMessageParts({
         isCancelling={isCancelling}
         isUser={isUser}
         key={key}
+        legacy={legacy}
         onCancelTurn={onCancelTurn}
         part={part}
         showCaret={showCaret && index === lastTextIndex}
@@ -232,6 +239,7 @@ function AgentMessageParts({
 function AgentMessagePart({
   isCancelling,
   isUser,
+  legacy,
   onCancelTurn,
   part,
   showCaret,
@@ -239,6 +247,7 @@ function AgentMessagePart({
 }: {
   readonly isCancelling: boolean;
   readonly isUser: boolean;
+  readonly legacy: boolean;
   readonly onCancelTurn: () => void;
   readonly part: EveMessagePart;
   readonly showCaret: boolean;
@@ -257,7 +266,12 @@ function AgentMessagePart({
       return <ReasoningPart isStreaming={part.state === "streaming"} text={part.text} />;
     case "authorization":
       return (
-        <AuthorizationPart isCancelling={isCancelling} onCancelTurn={onCancelTurn} part={part} />
+        <AuthorizationPart
+          isCancelling={isCancelling}
+          legacy={legacy}
+          onCancelTurn={onCancelTurn}
+          part={part}
+        />
       );
     case "dynamic-tool":
     case "file":
@@ -268,20 +282,26 @@ function AgentMessagePart({
 
 function AuthorizationPart({
   isCancelling,
+  legacy,
   onCancelTurn,
   part,
 }: {
   readonly isCancelling: boolean;
+  readonly legacy: boolean;
   readonly onCancelTurn: () => void;
   readonly part: EveAuthorizationPart;
 }) {
-  if (part.state === "required") {
+  // A legacy chat cannot resume, so its sign-in link and Skip would do
+  // nothing: the request shows as history.
+  if (part.state === "required" && !legacy) {
     return <AuthorizationCard isSkipping={isCancelling} onSkip={onCancelTurn} part={part} />;
   }
 
   return (
     <p className="my-2 px-3 text-sm leading-6 text-muted-foreground">
-      {authorizationOutcomeLine(part)}
+      {part.state === "required"
+        ? `${part.displayName} sign-in request (older chat)`
+        : authorizationOutcomeLine(part)}
     </p>
   );
 }
@@ -639,7 +659,10 @@ function ToolDetails({
   readonly onInputResponses: (responses: readonly AgentInputResponse[]) => void | Promise<void>;
   readonly part: EveDynamicToolPart;
 }) {
-  const hasOutput = part.state === "output-available" || part.state === "output-error";
+  // A catalog tool only opens for an input request; its raw payloads stay hidden.
+  const showPayloads = !isCatalogTool(resolveToolName(part));
+  const hasOutput =
+    showPayloads && (part.state === "output-available" || part.state === "output-error");
 
   return (
     <div className="space-y-1.5">
@@ -649,7 +672,7 @@ function ToolDetails({
         onInputResponses={onInputResponses}
         part={part}
       />
-      <ToolPayload label="input" value={part.input} />
+      {showPayloads ? <ToolPayload label="input" value={part.input} /> : null}
       {hasOutput ? (
         <ToolPayload
           label={part.state === "output-error" ? "error" : "result"}
@@ -833,6 +856,12 @@ function needsInputResponse(part: EveDynamicToolPart) {
 }
 
 function hasToolDetails(part: EveDynamicToolPart) {
+  // Checked first: an input request on any part, catalog tools included, must
+  // render its buttons, or the turn waits forever.
+  if (part.toolMetadata?.eve?.inputRequest) {
+    return true;
+  }
+
   if (isCatalogTool(resolveToolName(part))) {
     return false;
   }
@@ -842,7 +871,7 @@ function hasToolDetails(part: EveDynamicToolPart) {
     part.state === "output-available" && formatPayload(part.output).trim().length > 0;
   const hasError = part.state === "output-error" && part.errorText.trim().length > 0;
 
-  return hasInput || hasOutput || hasError || Boolean(part.toolMetadata?.eve?.inputRequest);
+  return hasInput || hasOutput || hasError;
 }
 
 // eve's catalog tools: how the model finds and calls tools that are not in its

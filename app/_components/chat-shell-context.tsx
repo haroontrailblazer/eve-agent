@@ -19,6 +19,9 @@ type ChatShellContextValue = {
     enabled: boolean,
   ) => void;
   readonly setupStatus: SetupStatus;
+  // SLACK_CONNECTOR is set, so the Slack channel is wired up. The sidebar and
+  // the Channels page both read it from here.
+  readonly slackConfigured: boolean;
   readonly touchChat: (chat: ChatListItem) => void;
   readonly viewer: Viewer | null;
 };

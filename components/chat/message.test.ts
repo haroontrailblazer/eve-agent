@@ -38,13 +38,17 @@ function completed(outcome: "authorized" | "declined" | "failed" | "timed-out") 
   } satisfies EveAuthorizationPart;
 }
 
-function render(message: EveMessage, overrides: { isInputOpen?: (id: string) => boolean } = {}) {
+function render(
+  message: EveMessage,
+  overrides: { isInputOpen?: (id: string) => boolean; legacy?: boolean } = {},
+) {
   return renderToStaticMarkup(
     createElement(AgentMessage, {
       canRespond: true,
       isCancelling: false,
       isInputOpen: overrides.isInputOpen ?? (() => true),
       isStreaming: false,
+      legacy: overrides.legacy,
       message,
       onCancelTurn: vi.fn(),
       onInputResponses: vi.fn(),
@@ -102,6 +106,22 @@ describe("AgentMessage authorization parts", () => {
 
     expect(html).toContain("Connect Notion");
     expect(html).toContain("Skip");
+  });
+
+  it("renders a required part in a legacy chat as a static line, with no Connect or Skip", () => {
+    const html = render(assistant(required), { legacy: true });
+
+    expect(html).toContain("Notion sign-in request (older chat)");
+    expect(html).not.toContain("Connect Notion");
+    expect(html).not.toContain("auth.example");
+    expect(html).not.toContain("Skip");
+    expect(html).not.toContain("<button");
+  });
+
+  it("still renders the outcome line for a completed part in a legacy chat", () => {
+    expect(render(assistant(completed("authorized")), { legacy: true })).toContain(
+      "Notion connected.",
+    );
   });
 
   it("renders one muted line for a completed part", () => {
@@ -166,6 +186,41 @@ describe("AgentMessage input requests", () => {
     const html = render(message, { isInputOpen: () => false });
 
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve/);
+  });
+
+  // eve__tool and eve__search parts hide their details, but an input request
+  // on one must still render its buttons, or the turn waits forever.
+  it.each(["eve__tool", "eve__search"])("renders the buttons for an input request on %s", (name) => {
+    const html = render(
+      assistant({
+        input: { name: "notion__create_page", input: { title: "Launch notes" } },
+        state: "approval-requested",
+        approval: { id: "r2" },
+        toolCallId: "c2",
+        toolMetadata: {
+          eve: {
+            inputRequest: {
+              kind: "tool-approval",
+              options: [{ id: "yes", label: "Approve" }],
+              prompt: "Allow this?",
+              requestId: "r2",
+            },
+            kind: "tool-call",
+            label: "Create a Notion page",
+            name,
+          },
+        },
+        toolName: name,
+        type: "dynamic-tool",
+      }),
+      { isInputOpen: (id) => id === "r2" },
+    );
+
+    expect(html).toContain("Allow this?");
+    expect(html).toContain("Approve");
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve/);
+    // The catalog call's raw input stays hidden.
+    expect(html).not.toContain("Launch notes");
   });
 });
 

@@ -191,4 +191,4 @@ pnpm build
 pnpm eve:build
 ```
 
-On a machine without Docker, `pnpm eve:build` fails on a missing `just-bash` package. See [Local eve build](setup-and-deploy.md#local-eve-build).
+On a machine without Docker, `pnpm eve:build` uses the `just-bash` sandbox provider, a devDependency. See [Local eve build](setup-and-deploy.md#local-eve-build).
