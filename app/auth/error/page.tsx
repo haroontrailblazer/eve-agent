@@ -67,7 +67,7 @@ function AuthErrorCard({
           <Button asChild className="h-8 rounded-md px-3 text-sm">
             <Link href="/">
               <ArrowLeftIcon className="size-4" />
-              Back to chat
+              Back to Studio
             </Link>
           </Button>
           {message.showSetupLinks ? (

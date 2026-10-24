@@ -7,6 +7,8 @@ export type ChatBootstrapSyncDetail = {
   readonly chats: readonly ChatListItem[];
   readonly nextCursor: string | null;
   readonly setupStatus: SetupStatus;
+  // SLACK_CONNECTOR is set, so the Slack channel is wired up.
+  readonly slackConfigured: boolean;
   readonly viewer: Viewer | null;
 };
 

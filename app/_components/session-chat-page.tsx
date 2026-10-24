@@ -125,7 +125,7 @@ export function SessionChatPage({
         } catch {}
 
         showRequestError(error instanceof Error ? error.message : "Failed to start chat.");
-        router.replace("/", { scroll: false });
+        router.replace("/chat", { scroll: false });
       }
     })();
   }, [
@@ -297,7 +297,6 @@ function ChatLoadingView({
 
   return (
     <>
-      <div className="h-12 shrink-0" />
       {pendingUserMessage ? (
         <ChatConversation>
           <ChatConversationContent>

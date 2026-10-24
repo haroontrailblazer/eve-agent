@@ -102,7 +102,6 @@ export function ChatSession({
 
   return (
     <>
-      <div className="h-12 shrink-0" />
       {isEmpty ? (
         <div className="min-h-0 flex-1" />
       ) : (

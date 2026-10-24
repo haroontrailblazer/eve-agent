@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getAppOrigin } from "@/lib/app-origin";
+import { sidebarHintScript } from "@/lib/sidebar-hint";
 import { themeInitScript } from "@/lib/theme";
 import "./globals.css";
 
@@ -62,6 +63,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} id="theme-init" />
+        <script dangerouslySetInnerHTML={{ __html: sidebarHintScript }} id="sidebar-hint" />
         <AuthDisplayPreHydrationHead />
       </head>
       <body className={`${geistSans.className} antialiased`}>

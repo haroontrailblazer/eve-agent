@@ -216,8 +216,16 @@ body {
   font-family: var(--font-sans);
 }
 
-html[data-eve-chat-sidebar="closed"] [data-desktop-sidebar] {
+/* A collapsed desktop sidebar on the first paint. lib/sidebar-hint.ts sets the
+   attribute from the cookie before hydration, while React still renders the
+   sidebar open. Unlayered on purpose, so it beats the Tailwind utilities on
+   the shadcn sidebar. AppShell clears the attribute when the sidebar opens. */
+html[data-harpy-sidebar="collapsed"] [data-slot="sidebar-gap"] {
   width: 0;
+}
+
+html[data-harpy-sidebar="collapsed"] [data-slot="sidebar-container"] {
+  left: calc(var(--sidebar-width) * -1);
 }
 
 .harpy-wordmark {

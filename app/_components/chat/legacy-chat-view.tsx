@@ -21,7 +21,6 @@ export function LegacyChatView({ chat }: { readonly chat: ActiveChat }) {
 
   return (
     <>
-      <div className="h-12 shrink-0" />
       {messages === null ? (
         <div className="flex min-h-0 flex-1 items-center justify-center px-4">
           <p className="max-w-sm text-center text-sm text-muted-foreground">
@@ -54,7 +53,7 @@ export function LegacyChatView({ chat }: { readonly chat: ActiveChat }) {
             This chat is from an older version of harpy. Start a new chat to continue.
           </p>
           <Button asChild size="sm">
-            <Link href="/">New chat</Link>
+            <Link href="/chat">New chat</Link>
           </Button>
         </div>
       </div>

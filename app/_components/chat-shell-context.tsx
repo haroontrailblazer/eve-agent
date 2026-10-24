@@ -6,9 +6,10 @@ import type { ChatListItem, SetupStatus, Viewer } from "@/lib/chat/types";
 
 export type { EnabledConnections } from "@/lib/chat/client-context";
 
+// Shared app state from AppShell. Sidebar open state is not here: read it with
+// useSidebar() from components/ui/sidebar.
 type ChatShellContextValue = {
   readonly activeChatId: string | null;
-  readonly desktopSidebarOpen: boolean;
   readonly enabledConnections: EnabledConnections;
   readonly removeChat: (chatId: string) => void;
   readonly requestSignIn: (draft?: string) => void;
@@ -38,7 +39,7 @@ export function useChatShell() {
   const value = useContext(ChatShellContext);
 
   if (!value) {
-    throw new Error("useChatShell must be used inside AgentChatShell.");
+    throw new Error("useChatShell must be used inside AppShell.");
   }
 
   return value;
