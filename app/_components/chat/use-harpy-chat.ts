@@ -62,7 +62,9 @@ export function useHarpyChat({
   // A message being sent, shown until eve projects its own optimistic bubble.
   const [preparing, setPreparing] = useState<PreparingMessage | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
-  const nextEventIndexRef = useRef(chat.events.length);
+  // Seeded from the server's next index, not the event count: a gap in the
+  // saved log would otherwise make new events reuse taken indexes.
+  const nextEventIndexRef = useRef(chat.nextEventIndex);
   const eventBufferRef = useRef<IndexedChatEvent[]>([]);
   const flushTimerRef = useRef<number | null>(null);
   const flushChainRef = useRef<Promise<void> | null>(null);

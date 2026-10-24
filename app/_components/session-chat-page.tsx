@@ -3,10 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createChatAction } from "@/app/actions/chat";
-import {
-  CHAT_ROUTE_SYNC_EVENT,
-  type ChatRouteSyncDetail,
-} from "@/app/_components/agent-chat-events";
 import { ChatSession } from "@/app/_components/chat/chat-session";
 import { ComposerFooterControls } from "@/app/_components/chat/composer-footer-controls";
 import { LegacyChatView } from "@/app/_components/chat/legacy-chat-view";
@@ -23,7 +19,12 @@ import {
   type Attachment,
 } from "@/lib/chat/attachments";
 import { shouldAutoSendPending } from "@/lib/chat/auto-send";
-import { hasOpenTurn } from "@/lib/chat/events";
+import {
+  INITIAL_CHAT_LOAD,
+  reduceChatLoad,
+  type ChatLoadEvent,
+  type ChatLoadState,
+} from "@/lib/chat/chat-load";
 import {
   clearPendingChatMessage,
   isProvisionalChatId,
@@ -41,6 +42,8 @@ type LoadedChat = {
   readonly chat: ActiveChat;
 };
 
+const LOAD_FAILED_MESSAGE = "Couldn't load this chat. Refresh to try again.";
+
 export function SessionChatPage({
   chatId,
   children,
@@ -49,7 +52,7 @@ export function SessionChatPage({
   readonly children: ReactNode;
 }) {
   const { setActiveChatId, setupStatus, touchChat, viewer } = useChatShell();
-  const [activeChat, setActiveChat] = useState<ActiveChat | null>(null);
+  const [chatLoad, setChatLoad] = useState<ChatLoadState>(INITIAL_CHAT_LOAD);
   const [loadedChat, setLoadedChat] = useState<LoadedChat | null>(null);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
   const currentChatIdRef = useRef(chatId);
@@ -63,7 +66,7 @@ export function SessionChatPage({
   }, [chatId]);
 
   useEffect(() => {
-    setActiveChat(null);
+    setChatLoad(INITIAL_CHAT_LOAD);
     setPendingUserMessage(null);
   }, [chatId]);
 
@@ -146,40 +149,9 @@ export function SessionChatPage({
     };
   }, [chatId, setActiveChatId]);
 
-  useEffect(() => {
-    const applyRouteSync = (detail: ChatRouteSyncDetail) => {
-      if (detail.chatId !== chatId) {
-        return;
-      }
-      setActiveChat((current) => {
-        if (!detail.activeChat && current?.id === chatId) {
-          return current;
-        }
-
-        if (shouldKeepCurrentActiveChat(current, detail.activeChat, chatId)) {
-          return current;
-        }
-
-        return detail.activeChat;
-      });
-    };
-    const target = window as Window & {
-      __eveChatRouteSync?: ChatRouteSyncDetail;
-    };
-    const handleRouteSync = (event: Event) => {
-      applyRouteSync((event as CustomEvent<ChatRouteSyncDetail>).detail);
-    };
-
-    window.addEventListener(CHAT_ROUTE_SYNC_EVENT, handleRouteSync);
-    if (target.__eveChatRouteSync) {
-      applyRouteSync(target.__eveChatRouteSync);
-    }
-
-    return () => {
-      window.removeEventListener(CHAT_ROUTE_SYNC_EVENT, handleRouteSync);
-    };
-  }, [chatId]);
-
+  // The chat is built only from this no-store fetch, never from the page's
+  // server render: on back and forward the router can reuse a stale copy of
+  // that render, with no session and no events (see lib/chat/chat-load.ts).
   useEffect(() => {
     if (!viewer || !setupStatus.appReady || isProvisionalChat) {
       return;
@@ -187,10 +159,18 @@ export function SessionChatPage({
 
     const abortController = new AbortController();
     let cancelled = false;
+    const apply = (event: ChatLoadEvent) => {
+      setChatLoad((current) => reduceChatLoad(chatId, current, event));
+    };
+    const fail = (message: string) => {
+      showRequestError(message);
+      apply({ message, type: "fetch-failed" });
+    };
 
     void (async () => {
       try {
         const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, {
+          cache: "no-store",
           signal: abortController.signal,
         });
 
@@ -199,11 +179,7 @@ export function SessionChatPage({
         }
 
         if (!response.ok) {
-          showRequestError(
-            response.status === 404
-              ? "Chat not found."
-              : "Failed to load chat history.",
-          );
+          fail(response.status === 404 ? "Chat not found." : LOAD_FAILED_MESSAGE);
           return;
         }
 
@@ -213,14 +189,14 @@ export function SessionChatPage({
           return;
         }
 
-        setActiveChat((current) =>
-          shouldKeepCurrentActiveChat(current, data.chat, chatId) ? current : data.chat,
-        );
-      } catch (error) {
+        if (data.chat) {
+          apply({ chat: data.chat, type: "fetched" });
+        } else {
+          fail("Chat not found.");
+        }
+      } catch {
         if (!cancelled && !abortController.signal.aborted) {
-          showRequestError(
-            error instanceof Error ? error.message : "Failed to load chat history.",
-          );
+          fail(LOAD_FAILED_MESSAGE);
         }
       }
     })();
@@ -230,6 +206,8 @@ export function SessionChatPage({
       abortController.abort();
     };
   }, [chatId, isProvisionalChat, setupStatus.appReady, viewer]);
+
+  const activeChat = chatLoad.status === "loaded" ? chatLoad.chat : null;
 
   // Settles once per chat whether it sends its pending first message. Reading
   // the pending attachments removes them from storage, so this runs in an
@@ -261,6 +239,7 @@ export function SessionChatPage({
       {loaded === null ? (
         <ChatLoadingView
           chatId={chatId}
+          failure={chatLoad.status === "failed" ? chatLoad.message : null}
           pendingUserMessage={pendingUserMessage}
           setupStatus={setupStatus}
         />
@@ -282,22 +261,26 @@ const noop = () => {};
 
 // Shown until the chat loads. A message handed over from the home page shows
 // at once, with "Thinking...", so the page does not jump when the chat loads.
+// When the chat could not be fetched, the composer says why and nothing sends.
 function ChatLoadingView({
   chatId,
+  failure,
   pendingUserMessage,
   setupStatus,
 }: {
   readonly chatId: string;
+  readonly failure: string | null;
   readonly pendingUserMessage: string | null;
   readonly setupStatus: SetupStatus;
 }) {
   const disabledReason =
     getSetupDisabledReason(setupStatus) ??
+    failure ??
     (pendingUserMessage ? "Sending message." : "Chat history is still loading.");
 
   return (
     <>
-      {pendingUserMessage ? (
+      {pendingUserMessage && failure === null ? (
         <ChatConversation>
           <ChatConversationContent>
             <AgentMessage
@@ -331,23 +314,4 @@ function ChatLoadingView({
       </div>
     </>
   );
-}
-
-// Never replace the current chat with a STALER snapshot for the same chat: a
-// late /api/chats fetch or route-sync must not clobber the freshly-completed
-// turn (which would blank the answer and relight "Thinking..." until a refresh).
-function shouldKeepCurrentActiveChat(
-  current: ActiveChat | null,
-  next: ActiveChat | null,
-  chatId: string,
-): boolean {
-  if (!current || current.id !== chatId || !next || next.id !== chatId) {
-    return false;
-  }
-
-  if (next.events.length < current.events.length) {
-    return true;
-  }
-
-  return hasOpenTurn(next.events) && !hasOpenTurn(current.events);
 }

@@ -131,15 +131,12 @@ export async function getChatForUser(chatId: string, userId: string): Promise<Ac
   }
 
   const events = await db
-    .select({ event: chatEvent.event })
+    .select({ event: chatEvent.event, index: chatEvent.eventIndex })
     .from(chatEvent)
     .where(eq(chatEvent.chatId, chatId))
     .orderBy(asc(chatEvent.eventIndex));
 
-  return toActiveChat(
-    row,
-    events.map((eventRow) => eventRow.event),
-  );
+  return toActiveChat(row, events);
 }
 
 export async function markChatPendingMessage({

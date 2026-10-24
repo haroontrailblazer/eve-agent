@@ -22,6 +22,9 @@ export type ActiveChat = {
   readonly events: readonly MessageStreamEvent[];
   readonly id: string;
   readonly legacy: boolean;
+  // The index the next saved stream event takes: one past the highest saved
+  // index, or 0 for a chat with no events.
+  readonly nextEventIndex: number;
   readonly pendingUserMessage: string | null;
   readonly session: ClientSessionState | undefined;
   readonly title: string;

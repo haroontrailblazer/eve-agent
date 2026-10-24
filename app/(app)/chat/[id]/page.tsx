@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { AgentChatRouteSync } from "@/app/_components/agent-chat-route-sync";
 import { SessionChatPage } from "@/app/_components/session-chat-page";
 import { isProvisionalChatId } from "@/lib/chat/provisional-chat";
 import { getChatForUser } from "@/lib/db/queries";
@@ -23,13 +22,16 @@ export default async function ChatPage({
   );
 }
 
+// Answers a missing chat with a 404. It renders nothing: SessionChatPage loads
+// the chat itself with a no-store fetch, because the router can reuse a stale
+// copy of this render on back and forward.
 async function ExistingChat({
   chatId,
 }: {
   readonly chatId: string;
 }) {
   if (isProvisionalChatId(chatId)) {
-    return <AgentChatRouteSync activeChat={null} chatId={chatId} />;
+    return null;
   }
 
   const setupStatus = await getSetupStatus();
@@ -41,5 +43,5 @@ async function ExistingChat({
     notFound();
   }
 
-  return <AgentChatRouteSync activeChat={activeChat} chatId={chatId} />;
+  return null;
 }
