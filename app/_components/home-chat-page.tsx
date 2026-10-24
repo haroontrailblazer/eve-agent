@@ -14,7 +14,7 @@ import {
   writePendingChatMessage,
 } from "@/lib/chat/provisional-chat";
 import { filesToAttachments, writePendingAttachments } from "@/lib/chat/attachments";
-import type { SetupStatus } from "@/lib/chat/types";
+import { getSetupDisabledReason } from "@/lib/chat/setup-reason";
 
 export function HomeChatPage() {
   const {
@@ -78,8 +78,7 @@ export function HomeChatPage() {
 
       if (!setupReady) {
         showRequestError(
-          getHomeComposerDisabledReason({ setupStatus, submitting }) ??
-            "Finish setup before chatting.",
+          getSetupDisabledReason(setupStatus) ?? "Finish setup before chatting.",
         );
         return;
       }
@@ -135,10 +134,7 @@ export function HomeChatPage() {
   );
 
   const composerDisabled = !setupReady;
-  const composerDisabledReason = getHomeComposerDisabledReason({
-    setupStatus,
-    submitting,
-  });
+  const composerDisabledReason = getSetupDisabledReason(setupStatus) ?? (submitting ? "Preparing chat." : undefined);
 
   if (pathname !== "/chat") {
     return null;
@@ -169,42 +165,4 @@ export function HomeChatPage() {
       </div>
     </div>
   );
-}
-
-function getHomeComposerDisabledReason({
-  setupStatus,
-  submitting,
-}: {
-  readonly setupStatus: SetupStatus;
-  readonly submitting: boolean;
-}) {
-  if (!setupStatus.databaseConfigured) {
-    return "Connect Neon Postgres before chatting.";
-  }
-
-  if (!setupStatus.databaseSchemaReady) {
-    return "Run database migrations: vercel env run -e production -- pnpm db:migrate.";
-  }
-
-  if (!setupStatus.authReady) {
-    const missing = setupStatus.missing.length
-      ? ` Missing: ${setupStatus.missing.join(", ")}.`
-      : "";
-
-    return `Finish auth setup before chatting.${missing}`;
-  }
-
-  if (!setupStatus.rateLimitReady) {
-    return "Provision Upstash Redis before chatting.";
-  }
-
-  if (!setupStatus.secretsReady) {
-    return "Set SOCIAL_TOKEN_ENCRYPTION_KEY before chatting.";
-  }
-
-  if (submitting) {
-    return "Preparing chat.";
-  }
-
-  return undefined;
 }

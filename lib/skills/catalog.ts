@@ -43,7 +43,7 @@ export const BUILTIN_SKILLS: readonly SkillSummary[] = [
     name: "Improve writing",
     description: "Tighten and polish text while keeping your voice.",
     prompt:
-      "Improve the writing below — tighten it, fix grammar, and keep the original meaning and voice:\n\n",
+      "Improve the writing below: tighten it, fix grammar, and keep the original meaning and voice:\n\n",
     source: "builtin",
   },
 ];
