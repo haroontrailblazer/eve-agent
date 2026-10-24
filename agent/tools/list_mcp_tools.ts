@@ -29,6 +29,17 @@ export default defineTool({
       return { ok: false, tools: [], message: `No MCP URL saved for ${platform}. Connect it first.` };
     }
 
+    // Its saved token or sign-in no longer decrypts. Only a fresh connect_mcp
+    // recovers the connection.
+    if (connection.secretsUnreadable) {
+      return {
+        ok: false,
+        needsReconnect: true,
+        tools: [],
+        message: `The saved sign-in for ${platform} can't be read anymore. Connect it again with connect_mcp.`,
+      };
+    }
+
     const auth: McpAuth = connection.token
       ? { token: connection.token }
       : { authProvider: new DbOAuthProvider(userId, platform, getAppOrigin()) };

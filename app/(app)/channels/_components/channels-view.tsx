@@ -2,7 +2,11 @@
 
 import { PlugIcon } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { disconnectMcpAction, listMcpConnectionsAction } from "@/app/actions/mcp";
+import {
+  disconnectMcpAction,
+  listMcpConnectionsAction,
+  type McpConnectionsResult,
+} from "@/app/actions/mcp";
 import { useChatShell } from "@/app/_components/chat-shell-context";
 import { ChannelStatusPill } from "@/components/harpy/channel-status-pill";
 import { ConfirmActionButton } from "@/components/harpy/confirm-action-button";
@@ -68,21 +72,31 @@ function Section({ children, title }: { readonly title: string; readonly childre
   );
 }
 
+// A failed request reads the same as a failed listing: the tools could not be
+// loaded, which is never shown as "no tools".
+async function readConnections(): Promise<McpConnectionsResult> {
+  try {
+    return await listMcpConnectionsAction();
+  } catch {
+    return { ok: false };
+  }
+}
+
 function ToolsList() {
   const { requestSignIn, viewer } = useChatShell();
   const viewerId = viewer?.id ?? null;
-  const [connections, setConnections] = useState<readonly McpConnectionSummary[] | null>(null);
+  const [result, setResult] = useState<McpConnectionsResult | null>(null);
 
   const load = useCallback(async () => {
-    setConnections(await listMcpConnectionsAction());
+    setResult(await readConnections());
   }, []);
 
   useEffect(() => {
     if (!viewerId) return;
     let cancelled = false;
 
-    void listMcpConnectionsAction().then((next) => {
-      if (!cancelled) setConnections(next);
+    void readConnections().then((next) => {
+      if (!cancelled) setResult(next);
     });
 
     return () => {
@@ -101,9 +115,30 @@ function ToolsList() {
     );
   }
 
-  if (connections === null) {
+  if (result === null) {
     return <Skeleton className="h-16 w-full" />;
   }
+
+  if (!result.ok) {
+    return (
+      <Card className="flex-row items-center justify-between gap-3 p-4" role="alert">
+        <p className="text-small text-muted-foreground">Couldn&apos;t load tools.</p>
+        <Button
+          onClick={() => {
+            setResult(null);
+            void load();
+          }}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Try again
+        </Button>
+      </Card>
+    );
+  }
+
+  const connections = result.connections;
 
   if (connections.length === 0) {
     return (
@@ -145,12 +180,23 @@ function ConnectionRow({
         <div className="min-w-0 flex-1">
           <p className="text-small font-medium text-foreground">{label}</p>
           <p className="truncate text-meta text-muted-foreground">
-            {connection.account ? `Account: ${connection.account}` : "No account set"}
+            {connection.needsReconnect
+              ? `Its saved sign-in can't be read. Ask harpy to connect ${label} again.`
+              : connection.account
+                ? `Account: ${connection.account}`
+                : "No account set"}
           </p>
         </div>
-        <span className="shrink-0 text-meta text-muted-foreground">
-          {connection.enabled ? "Connected" : "Disabled"}
-        </span>
+        {connection.needsReconnect ? (
+          <span className="inline-flex shrink-0 items-center gap-1.5 text-meta text-muted-foreground">
+            <span aria-hidden="true" className="size-1.5 rounded-full bg-status-failed" />
+            Needs reconnect
+          </span>
+        ) : (
+          <span className="shrink-0 text-meta text-muted-foreground">
+            {connection.enabled ? "Connected" : "Disabled"}
+          </span>
+        )}
         <ConfirmActionButton
           confirmBody={`harpy will stop using ${label}. You can connect it again from chat.`}
           confirmLabel="Disconnect"

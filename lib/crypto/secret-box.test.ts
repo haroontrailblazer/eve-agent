@@ -4,6 +4,7 @@ import {
   encryptSecret,
   isSecretBox,
   isTokenEncryptionConfigured,
+  looksLikeSecretBox,
   openSecret,
   SecretBoxError,
 } from "@/lib/crypto/secret-box";
@@ -114,6 +115,32 @@ describe("openSecret", () => {
     const box = encryptSecret("tok", env);
 
     expect(() => openSecret(box, other)).toThrow(SecretBoxError);
+  });
+
+  it("fails closed on a damaged box instead of passing it through as legacy plaintext", () => {
+    const box = encryptSecret("tok", env);
+
+    expect(() => openSecret("v1:abc", env)).toThrow(SecretBoxError);
+    expect(() => openSecret("v1:", env)).toThrow(SecretBoxError);
+    // A segment lost, and a segment cut short, so the value no longer matches
+    // the box format.
+    expect(() => openSecret(box.split(":").slice(0, 3).join(":"), env)).toThrow(SecretBoxError);
+    expect(() => openSecret(replaceSegment(box, 1, (iv) => iv.slice(0, -2)), env)).toThrow(
+      SecretBoxError,
+    );
+  });
+});
+
+describe("looksLikeSecretBox", () => {
+  it("is true for anything with the v1: prefix, well formed or not", () => {
+    expect(looksLikeSecretBox(encryptSecret("tok", env))).toBe(true);
+    expect(looksLikeSecretBox("v1:abc")).toBe(true);
+  });
+
+  it("is false for legacy plaintext", () => {
+    expect(looksLikeSecretBox("plain-token")).toBe(false);
+    expect(looksLikeSecretBox("")).toBe(false);
+    expect(looksLikeSecretBox("V1:abc")).toBe(false);
   });
 });
 

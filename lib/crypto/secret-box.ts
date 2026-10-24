@@ -11,6 +11,7 @@ const KEY_BYTES = 32;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const ALGORITHM = "aes-256-gcm";
+const BOX_PREFIX = "v1:";
 const BOX_PATTERN = /^v1:[A-Za-z0-9_-]{16}:[A-Za-z0-9_-]{22}:[A-Za-z0-9_-]*$/;
 
 export class SecretBoxError extends Error {
@@ -20,8 +21,16 @@ export class SecretBoxError extends Error {
   }
 }
 
+// True for a well formed box.
 export function isSecretBox(value: string): boolean {
   return BOX_PATTERN.test(value);
+}
+
+// True for anything stored as a box, well formed or damaged. Use this, not
+// isSecretBox, to tell a box from legacy plaintext: a damaged box must fail to
+// open, never pass for a plaintext secret.
+export function looksLikeSecretBox(value: string): boolean {
+  return value.startsWith(BOX_PREFIX);
 }
 
 function readKey(env: Env): Buffer | null {
@@ -100,12 +109,12 @@ export function decryptSecret(box: string, env: Env = process.env): string {
 }
 
 // A stored value is either a box or a legacy plaintext secret written before
-// encryption existed. A box that cannot be opened throws; it is never returned
-// as if it were the secret.
+// encryption existed. Anything with the box prefix is a box: one that cannot be
+// opened, damaged or not, throws. It is never returned as if it were the secret.
 export function openSecret(value: string | null, env: Env = process.env): string | null {
   if (value === null) {
     return null;
   }
 
-  return isSecretBox(value) ? decryptSecret(value, env) : value;
+  return looksLikeSecretBox(value) ? decryptSecret(value, env) : value;
 }

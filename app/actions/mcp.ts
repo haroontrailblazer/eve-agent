@@ -17,18 +17,27 @@ export async function disconnectMcpAction(
   return { ok: removed };
 }
 
+export type McpConnectionsResult =
+  | { readonly ok: true; readonly connections: readonly McpConnectionSummary[] }
+  | { readonly ok: false };
+
 // The signed-in user's MCP connections for the Channels page. Rows are mapped
-// to summaries here, so tokens and OAuth data never leave the server.
-export async function listMcpConnectionsAction(): Promise<readonly McpConnectionSummary[]> {
+// to summaries here, so tokens and OAuth data never leave the server. A failed
+// read is reported as a failure, never as an empty list.
+export async function listMcpConnectionsAction(): Promise<McpConnectionsResult> {
   const viewer = await getServerViewer();
 
   if (!viewer) {
-    return [];
+    return { connections: [], ok: true };
   }
 
   try {
-    return (await listMcpConnections(viewer.id)).map(toMcpConnectionSummary);
-  } catch {
-    return [];
+    return {
+      connections: (await listMcpConnections(viewer.id)).map(toMcpConnectionSummary),
+      ok: true,
+    };
+  } catch (error) {
+    console.error("Could not list MCP connections", error);
+    return { ok: false };
   }
 }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { McpConnection } from "@/lib/db/schema";
+import type { McpConnectionRow } from "@/lib/db/mcp";
 import { toMcpConnectionSummary } from "@/lib/mcp-summary";
 
-const row: McpConnection = {
+const row: McpConnectionRow = {
   id: "c1",
   userId: "u1",
   platform: "notion",
@@ -14,15 +14,17 @@ const row: McpConnection = {
   oauthState: "state-123",
   createdAt: new Date(0),
   updatedAt: new Date(0),
+  secretsUnreadable: false,
 };
 
 describe("toMcpConnectionSummary", () => {
-  it("keeps only platform, account, enabled and hasToken", () => {
+  it("keeps only platform, account, enabled, hasToken and needsReconnect", () => {
     expect(toMcpConnectionSummary(row)).toEqual({
       platform: "notion",
       account: "me@example.com",
       enabled: true,
       hasToken: true,
+      needsReconnect: false,
     });
   });
 
@@ -46,5 +48,17 @@ describe("toMcpConnectionSummary", () => {
       account: null,
       enabled: false,
     });
+  });
+
+  it("asks for a reconnect when the row's secrets could not be decrypted", () => {
+    const summary = toMcpConnectionSummary({
+      ...row,
+      oauth: null,
+      secretsUnreadable: true,
+      token: null,
+    });
+
+    expect(summary.needsReconnect).toBe(true);
+    expect(summary.hasToken).toBe(false);
   });
 });

@@ -1,4 +1,9 @@
-import { decryptSecret, encryptSecret, isSecretBox, SecretBoxError } from "@/lib/crypto/secret-box";
+import {
+  decryptSecret,
+  encryptSecret,
+  looksLikeSecretBox,
+  SecretBoxError,
+} from "@/lib/crypto/secret-box";
 
 // mcp_connection.oauth holds the dynamic client registration, PKCE verifier and
 // tokens for an OAuth MCP server. It is stored as { box } (the JSON, encrypted)
@@ -13,6 +18,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// The sealed shape: { box } and nothing else. A damaged box still counts, so it
+// fails to open instead of passing for a legacy object.
 export function isSealedOauth(value: unknown): value is SealedOauth {
   if (!isRecord(value)) {
     return false;
@@ -20,7 +27,12 @@ export function isSealedOauth(value: unknown): value is SealedOauth {
 
   const keys = Object.keys(value);
 
-  return keys.length === 1 && keys[0] === "box" && typeof value.box === "string" && isSecretBox(value.box);
+  return (
+    keys.length === 1 &&
+    keys[0] === "box" &&
+    typeof value.box === "string" &&
+    looksLikeSecretBox(value.box)
+  );
 }
 
 export function sealOauth(value: Record<string, unknown> | null, env?: Env): SealedOauth | null {

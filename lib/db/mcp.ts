@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import {
   encryptSecret,
-  isSecretBox,
   isTokenEncryptionConfigured,
+  looksLikeSecretBox,
   openSecret,
+  SecretBoxError,
 } from "@/lib/crypto/secret-box";
 import { db } from "@/lib/db/client";
 import { isSealedOauth, openOauth, sealOauth } from "@/lib/db/mcp-secrets";
@@ -19,29 +20,109 @@ import { mcpConnection, type McpConnection } from "@/lib/db/schema";
 // callers only ever see plaintext rows. oauth_state stays plaintext because the
 // OAuth callback looks the row up by it.
 
+// A row as callers see it. A secret that cannot be decrypted (the key was
+// rotated or set wrong, or the box is damaged) comes back as null, with
+// secretsUnreadable set, so one bad row never fails a whole list. Ciphertext is
+// never returned.
+export type McpConnectionRow = McpConnection & { readonly secretsUnreadable: boolean };
+
+type OpenedSecrets = {
+  readonly oauth: Record<string, unknown> | null;
+  readonly oauthUnreadable: boolean;
+  readonly token: string | null;
+  readonly tokenUnreadable: boolean;
+};
+
+function tryOpen<T>(open: () => T): { readonly value: T } | null {
+  try {
+    return { value: open() };
+  } catch (error) {
+    if (error instanceof SecretBoxError) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+function openSecrets(row: McpConnection): OpenedSecrets {
+  const token = tryOpen(() => openSecret(row.token));
+  const oauth = tryOpen(() => openOauth(row.oauth));
+
+  return {
+    oauth: oauth?.value ?? null,
+    oauthUnreadable: oauth === null,
+    token: token?.value ?? null,
+    tokenUnreadable: token === null,
+  };
+}
+
 // Decrypt a row for the caller. A row written before encryption existed still
-// holds plaintext; it is returned as is and re-encrypted in place.
-async function openRow(row: McpConnection): Promise<McpConnection> {
-  const token = openSecret(row.token);
-  const oauth = openOauth(row.oauth);
+// holds plaintext; it is returned as is and re-encrypted in place. A read never
+// clears an unreadable secret: setting the right key brings it back.
+async function openRow(row: McpConnection): Promise<McpConnectionRow> {
+  const opened = openSecrets(row);
 
   await sealLegacySecrets(row);
 
-  return { ...row, oauth, token };
+  return {
+    ...row,
+    oauth: opened.oauth,
+    secretsUnreadable: opened.tokenUnreadable || opened.oauthUnreadable,
+    token: opened.token,
+  };
+}
+
+// Opens the row an upsert wrote. A reconnect replaces secrets it cannot read
+// instead of failing on them: each unreadable field is cleared to null, so the
+// connection starts from fresh state. Each clear is a compare-and-set on the
+// exact stored value, so newer state written meanwhile is never lost. With no
+// key configured at all nothing is cleared, because setting the key would bring
+// the row back.
+async function openUpsertedRow(row: McpConnection): Promise<McpConnectionRow> {
+  if (!isTokenEncryptionConfigured()) {
+    return openRow(row);
+  }
+
+  const opened = openSecrets(row);
+
+  if (opened.tokenUnreadable && row.token !== null) {
+    await db
+      .update(mcpConnection)
+      .set({ token: null })
+      .where(and(eq(mcpConnection.id, row.id), eq(mcpConnection.token, row.token)));
+  }
+
+  if (opened.oauthUnreadable) {
+    await db
+      .update(mcpConnection)
+      .set({ oauth: null })
+      .where(
+        and(
+          eq(mcpConnection.id, row.id),
+          sql`${mcpConnection.oauth} = ${JSON.stringify(row.oauth)}::jsonb`,
+        ),
+      );
+  }
+
+  await sealLegacySecrets(row);
+
+  return { ...row, oauth: opened.oauth, secretsUnreadable: false, token: opened.token };
 }
 
 // Re-encrypt plaintext secrets in place. Each update is a compare-and-set on the
 // exact plaintext that was read, so a concurrent write of newer data is never
 // overwritten by this stale value. This is best effort: the row was already read
 // successfully, so a failure here must not fail the read, and the next read
-// retries. Without a key there is nothing to do; writes refuse in that case.
+// retries. Without a key there is nothing to do; writes refuse in that case. A
+// damaged box is not plaintext and is never sealed as if it were.
 async function sealLegacySecrets(row: McpConnection): Promise<void> {
   if (!isTokenEncryptionConfigured()) {
     return;
   }
 
   try {
-    if (row.token !== null && !isSecretBox(row.token)) {
+    if (row.token !== null && !looksLikeSecretBox(row.token)) {
       await db
         .update(mcpConnection)
         .set({ token: encryptSecret(row.token) })
@@ -64,7 +145,7 @@ async function sealLegacySecrets(row: McpConnection): Promise<void> {
   }
 }
 
-export async function listMcpConnections(userId: string): Promise<McpConnection[]> {
+export async function listMcpConnections(userId: string): Promise<McpConnectionRow[]> {
   const rows = await db
     .select()
     .from(mcpConnection)
@@ -77,7 +158,7 @@ export async function listMcpConnections(userId: string): Promise<McpConnection[
 export async function getMcpConnection(
   userId: string,
   platform: string,
-): Promise<McpConnection | null> {
+): Promise<McpConnectionRow | null> {
   const rows = await db
     .select()
     .from(mcpConnection)
@@ -101,8 +182,9 @@ export type UpsertMcpInput = {
 // Connect or switch an account: one atomic insert that updates the existing row
 // for this (user, platform) on conflict. Only fields that are provided are
 // overwritten. A token is encrypted here, which throws when no key is set, so
-// nothing is ever stored in plaintext.
-export async function upsertMcpConnection(input: UpsertMcpInput): Promise<McpConnection> {
+// nothing is ever stored in plaintext. Secrets left on the row that no longer
+// decrypt are cleared rather than read (see openUpsertedRow).
+export async function upsertMcpConnection(input: UpsertMcpInput): Promise<McpConnectionRow> {
   const platform = input.platform.toLowerCase();
   const now = new Date();
   const token = typeof input.token === "string" ? encryptSecret(input.token) : input.token;
@@ -132,7 +214,7 @@ export async function upsertMcpConnection(input: UpsertMcpInput): Promise<McpCon
     })
     .returning();
 
-  return openRow(rows[0]!);
+  return openUpsertedRow(rows[0]!);
 }
 
 export async function deleteMcpConnection(userId: string, platform: string): Promise<boolean> {
@@ -148,6 +230,8 @@ export async function deleteMcpConnection(userId: string, platform: string): Pro
 
 // --- OAuth state (for MCP servers that sign in via OAuth) -------------------
 
+// Merges into the stored OAuth state. State that no longer decrypts reads as
+// empty, so the patch replaces it with fresh state instead of failing.
 export async function patchMcpOauth(
   userId: string,
   platform: string,
@@ -176,7 +260,7 @@ export async function setMcpOauthState(
     .where(and(eq(mcpConnection.userId, userId), eq(mcpConnection.platform, p)));
 }
 
-export async function getMcpByOauthState(state: string): Promise<McpConnection | null> {
+export async function getMcpByOauthState(state: string): Promise<McpConnectionRow | null> {
   const rows = await db
     .select()
     .from(mcpConnection)

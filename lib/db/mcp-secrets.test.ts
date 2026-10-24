@@ -44,6 +44,10 @@ describe("openOauth", () => {
     expect(() => openOauth(sealOauth({ a: 1 }, env), other)).toThrow(SecretBoxError);
   });
 
+  it("fails closed on a damaged box instead of returning it as a legacy object", () => {
+    expect(() => openOauth({ box: "v1:damaged" }, env)).toThrow(SecretBoxError);
+  });
+
   it("throws when a sealed payload is not a json object", () => {
     expect(() => openOauth({ box: encryptSecret("[1]", env) }, env)).toThrow(SecretBoxError);
     expect(() => openOauth({ box: encryptSecret("not json", env) }, env)).toThrow(SecretBoxError);
@@ -55,6 +59,9 @@ describe("isSealedOauth", () => {
     expect(isSealedOauth(sealOauth({ a: 1 }, env))).toBe(true);
     expect(isSealedOauth({ a: 1 })).toBe(false);
     expect(isSealedOauth({ box: "not-a-box" })).toBe(false);
+    // A damaged box still counts as sealed, so it is opened (and fails) rather
+    // than read or re-sealed as plaintext.
+    expect(isSealedOauth({ box: "v1:damaged" })).toBe(true);
     expect(isSealedOauth({ box: encryptSecret("{}", env), extra: true })).toBe(false);
     expect(isSealedOauth(null)).toBe(false);
   });

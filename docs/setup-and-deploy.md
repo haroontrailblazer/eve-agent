@@ -56,7 +56,7 @@ openssl rand -base64 32
 printf '%s' "<generated-key>" | vercel env add SOCIAL_TOKEN_ENCRYPTION_KEY production preview development
 ```
 
-Warning: rotating or losing this key makes every stored secret unreadable. Users then have to reconnect their MCP servers. Keep a copy in your password manager.
+Warning: rotating or losing this key makes every stored secret unreadable. Those connections show as "Needs reconnect" under Tools on the Channels page, and asking harpy to connect one again replaces its unreadable secrets. Until a connection is reconnected, setting the old key back restores it. Keep a copy in your password manager.
 
 ## Vercel Blob
 
@@ -406,7 +406,8 @@ These checks need real credentials (Better Auth, Blob token, encryption key, AI 
 
 - Connect an OAuth MCP server (Notion).
 - In Postgres, the new `mcp_connection` row has no readable token text: `oauth` is `{"box": ...}` and any `token` is an encrypted box.
-- Disconnect and reconnect works. With a different `SOCIAL_TOKEN_ENCRYPTION_KEY` the connection has to be reconnected.
+- Disconnect and reconnect works.
+- With a different `SOCIAL_TOKEN_ENCRYPTION_KEY`, Channels still lists the connection, marked "Needs reconnect", instead of "No tools connected yet". Asking harpy to connect it again succeeds and clears the mark.
 
 ### Pages and `/design`
 
