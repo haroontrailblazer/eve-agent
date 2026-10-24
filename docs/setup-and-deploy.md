@@ -279,7 +279,7 @@ Checks:
 pnpm test
 pnpm typecheck
 pnpm build
-pnpm exec eve build --skip-sandbox-prewarm
+pnpm eve:build
 ```
 
 ## Run Locally
