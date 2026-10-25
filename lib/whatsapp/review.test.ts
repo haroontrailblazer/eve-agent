@@ -33,9 +33,9 @@ vi.mock("@/lib/channel-auth", () => ({ resolveChannelAuth: mocks.resolveChannelA
 vi.mock("@/lib/redis", () => ({ getRedis: () => (mocks.hasRedis ? mocks.redis : null) }));
 
 const { COPY } = await import("@/lib/whatsapp/copy");
-const { claimTap, handleHarpyAction, handleIncomingAction, setPendingEdit, takePendingEdit } = await import(
-  "@/lib/whatsapp/review"
-);
+const { failureFor } = await import("@/lib/review");
+const { claimTap, handleHarpyAction, handleIncomingAction, reviewFailureReply, setPendingEdit, takePendingEdit } =
+  await import("@/lib/whatsapp/review");
 
 function draft(id: string, status: DraftRecord["status"], revision: number): DraftRecord {
   return {
@@ -62,6 +62,13 @@ function draft(id: string, status: DraftRecord["status"], revision: number): Dra
 }
 
 const base = { tapId: "wamid.tap1", waId: "4915", brandId: "b1" } as const;
+
+// A failed approve or skip built the way lib/review.ts builds it: the guarded
+// update matched no row, so the real failureFor reads the reason off the
+// current draft.
+function failedTap(current: DraftRecord | null, revision: number, action: "approve" | "skip") {
+  return { ok: false, reason: failureFor(current, revision, action, "pending_review"), draft: current };
+}
 
 function sentTexts(): string[] {
   return mocks.sendWhatsApp.mock.calls.map(([message]) => message.text?.body);
@@ -159,8 +166,15 @@ describe("handleHarpyAction", () => {
     });
   });
 
-  it("sends no card when skip hits an invalid state", async () => {
-    mocks.skipDraft.mockResolvedValue({ ok: false, reason: "invalid_state", draft: draft("d1", "skipped", 2) });
+  it("sends nothing for a second approve of the same card", async () => {
+    mocks.approveDraft.mockResolvedValue(failedTap(draft("d1", "approved", 2), 2, "approve"));
+    await handleHarpyAction({ ...base, action: { verb: "approve", draftId: "d1", revision: 2 } });
+    expect(mocks.sendWhatsApp).not.toHaveBeenCalled();
+    expect(mocks.sendReviewCards).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing for a second skip of the same card", async () => {
+    mocks.skipDraft.mockResolvedValue(failedTap(draft("d1", "skipped", 2), 2, "skip"));
     await handleHarpyAction({ ...base, action: { verb: "skip", draftId: "d1", revision: 2 } });
     expect(mocks.skipDraft).toHaveBeenCalledWith({
       brandId: "b1",
@@ -168,6 +182,49 @@ describe("handleHarpyAction", () => {
       expectedRevision: 2,
       expectedStatus: "pending_review",
     });
+    expect(mocks.sendWhatsApp).not.toHaveBeenCalled();
+    expect(mocks.sendReviewCards).not.toHaveBeenCalled();
+  });
+
+  it("says the draft is already approved when skip hits an approved draft", async () => {
+    mocks.skipDraft.mockResolvedValue(failedTap(draft("d1", "approved", 2), 2, "skip"));
+    await handleHarpyAction({ ...base, action: { verb: "skip", draftId: "d1", revision: 2 } });
+    expect(sentTexts()).toEqual([COPY.alreadyApproved]);
+    expect(COPY.alreadyApproved).toBe("That draft is already approved. It waits in Studio under Up next.");
+    expect(mocks.sendReviewCards).not.toHaveBeenCalled();
+  });
+
+  it("says the draft was skipped when approve hits a skipped draft", async () => {
+    mocks.approveDraft.mockResolvedValue(failedTap(draft("d1", "skipped", 2), 2, "approve"));
+    await handleHarpyAction({ ...base, action: { verb: "approve", draftId: "d1", revision: 2 } });
+    expect(sentTexts()).toEqual([COPY.alreadySkipped]);
+    expect(COPY.alreadySkipped).toBe("That draft was skipped. You can restore it in Studio.");
+    expect(mocks.sendReviewCards).not.toHaveBeenCalled();
+  });
+
+  it("says the draft is approved when approve hits a newer approved revision", async () => {
+    mocks.approveDraft.mockResolvedValue(failedTap(draft("d1", "approved", 3), 2, "approve"));
+    await handleHarpyAction({ ...base, action: { verb: "approve", draftId: "d1", revision: 2 } });
+    expect(sentTexts()).toEqual([COPY.alreadyApproved]);
+    expect(mocks.sendReviewCards).not.toHaveBeenCalled();
+  });
+
+  it("keeps the stale message and the latest card for a new revision of a pending draft", async () => {
+    const current = draft("d1", "pending_review", 3);
+    mocks.skipDraft.mockResolvedValue(failedTap(current, 2, "skip"));
+    await handleHarpyAction({ ...base, action: { verb: "skip", draftId: "d1", revision: 2 } });
+    expect(sentTexts()).toEqual(["That draft changed. Showing the latest."]);
+    expect(mocks.sendReviewCards).toHaveBeenCalledWith({
+      brandId: "b1",
+      waId: "4915",
+      drafts: [current],
+      notificationId: null,
+    });
+  });
+
+  it("uses the general line for a draft in any other state", async () => {
+    mocks.approveDraft.mockResolvedValue(failedTap(draft("d1", "scheduled", 2), 2, "approve"));
+    await handleHarpyAction({ ...base, action: { verb: "approve", draftId: "d1", revision: 2 } });
     expect(sentTexts()).toEqual(["That draft can't do that right now."]);
     expect(mocks.sendReviewCards).not.toHaveBeenCalled();
   });
@@ -205,10 +262,12 @@ describe("handleHarpyAction", () => {
     expect(mocks.sendReviewCards).toHaveBeenCalledWith(expect.objectContaining({ drafts: [current] }));
   });
 
-  it("refuses to edit a draft that cannot be edited", async () => {
+  it("says a skipped draft was skipped on an edit tap", async () => {
     mocks.getDraft.mockResolvedValue(draft("d1", "skipped", 2));
     await handleHarpyAction({ ...base, action: { verb: "edit", draftId: "d1", revision: 2 } });
-    expect(sentTexts()).toEqual(["That draft can't do that right now."]);
+    expect(sentTexts()).toEqual([COPY.alreadySkipped]);
+    expect(mocks.redis.set).not.toHaveBeenCalledWith("wa:edit:4915", expect.anything(), expect.anything());
+    expect(mocks.sendReviewCards).not.toHaveBeenCalled();
   });
 
   it("says the draft is gone when an edit target is missing", async () => {
@@ -235,6 +294,37 @@ describe("handleHarpyAction", () => {
     await handleHarpyAction({ ...base, action: { verb: "review", ideaId: "i1" } });
     expect(sentTexts()).toEqual([COPY.nothingToReview]);
     expect(mocks.sendReviewCards).not.toHaveBeenCalled();
+  });
+});
+
+describe("reviewFailureReply", () => {
+  it("is silent only for a repeat of a tap that already worked", () => {
+    const approved = draft("d1", "approved", 2);
+    expect(reviewFailureReply({ reason: "stale", current: approved, revision: 2, tapTarget: "approved" })).toEqual({
+      kind: "silent",
+    });
+    expect(reviewFailureReply({ reason: "stale", current: approved, revision: 2 })).toEqual({
+      kind: "reply",
+      text: COPY.alreadyApproved,
+      card: null,
+    });
+  });
+
+  it("says a missing draft is gone", () => {
+    expect(reviewFailureReply({ reason: "not_found", current: null, revision: 2, tapTarget: "skipped" })).toEqual({
+      kind: "reply",
+      text: "That draft is gone.",
+      card: null,
+    });
+  });
+
+  it("attaches the card only for a pending draft", () => {
+    const pending = draft("d1", "pending_review", 3);
+    expect(reviewFailureReply({ reason: "stale", current: pending, revision: 2, tapTarget: "approved" })).toEqual({
+      kind: "reply",
+      text: "That draft changed. Showing the latest.",
+      card: pending,
+    });
   });
 });
 

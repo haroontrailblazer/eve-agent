@@ -5,7 +5,7 @@ import { resolveChannelAuth } from "@/lib/channel-auth";
 import type { DraftRecord } from "@/lib/drafts/records";
 import { canApply } from "@/lib/drafts/state";
 import { getDraft, listDraftsForIdea } from "@/lib/drafts/store";
-import type { SocialPlatform } from "@/lib/drafts/types";
+import type { DraftState, SocialPlatform } from "@/lib/drafts/types";
 import { PLATFORMS } from "@/lib/platforms";
 import { getRedis } from "@/lib/redis";
 import { approveDraft, type ReviewFailure, reviewFailureMessage, skipDraft } from "@/lib/review";
@@ -53,7 +53,8 @@ export async function takePendingEdit(waId: string): Promise<PendingEdit | null>
   }
 }
 
-// WhatsApp redelivers webhooks and people double tap, so each tap runs once.
+// WhatsApp redelivers webhooks, so each delivery of a tap runs once. A second
+// tap on the same button has its own id; reviewFailureReply keeps it quiet.
 // Without Redis taps are processed without dedupe.
 export async function claimTap(tapId: string): Promise<boolean> {
   const redis = getRedis();
@@ -66,18 +67,41 @@ async function reply(waId: string, body: string): Promise<void> {
   await sendWhatsApp(textMessage(waId, body));
 }
 
-// A failed tap tells the user why and, when the draft is still waiting for
-// review, shows its latest card.
-async function replyFailure(input: {
-  readonly brandId: string;
-  readonly waId: string;
+export type ReviewFailureReply =
+  | { readonly kind: "silent" }
+  | { readonly kind: "reply"; readonly text: string; readonly card: DraftRecord | null };
+
+// What a failed tap or edit reply tells the owner. A repeat of a tap that
+// already worked gets nothing. A draft that has moved on says where it is. Only
+// a draft still waiting for review, now at a newer revision, gets its card.
+export function reviewFailureReply(input: {
   readonly reason: ReviewFailure;
   readonly current: DraftRecord | null;
-}): Promise<void> {
-  const { brandId, waId, reason, current } = input;
-  await reply(waId, reviewFailureMessage(reason));
-  if (current?.status === "pending_review") {
-    await sendReviewCards({ brandId, waId, drafts: [current], notificationId: null });
+  readonly revision: number;
+  // The state the tap sets: "approved" for Approve, "skipped" for Skip.
+  readonly tapTarget?: DraftState;
+}): ReviewFailureReply {
+  const { reason, current, revision, tapTarget } = input;
+  if (!current) return { kind: "reply", text: reviewFailureMessage("not_found"), card: null };
+  if (tapTarget && current.revision === revision && current.status === tapTarget) return { kind: "silent" };
+
+  switch (current.status) {
+    case "pending_review":
+      return { kind: "reply", text: reviewFailureMessage(reason), card: current };
+    case "approved":
+      return { kind: "reply", text: COPY.alreadyApproved, card: null };
+    case "skipped":
+      return { kind: "reply", text: COPY.alreadySkipped, card: null };
+    default:
+      return { kind: "reply", text: reviewFailureMessage("invalid_state"), card: null };
+  }
+}
+
+async function replyFailure(brandId: string, waId: string, failure: ReviewFailureReply): Promise<void> {
+  if (failure.kind === "silent") return;
+  await reply(waId, failure.text);
+  if (failure.card) {
+    await sendReviewCards({ brandId, waId, drafts: [failure.card], notificationId: null });
   }
 }
 
@@ -111,7 +135,7 @@ export async function handleHarpyAction(input: {
       return;
     }
     const reason: ReviewFailure = !current ? "not_found" : current.revision !== revision ? "stale" : "invalid_state";
-    await replyFailure({ brandId, waId, reason, current });
+    await replyFailure(brandId, waId, reviewFailureReply({ reason, current, revision }));
     return;
   }
 
@@ -125,7 +149,12 @@ export async function handleHarpyAction(input: {
     return;
   }
 
-  await replyFailure({ brandId, waId, reason: result.reason, current: result.draft });
+  const tapTarget = action.verb === "approve" ? "approved" : "skipped";
+  await replyFailure(
+    brandId,
+    waId,
+    reviewFailureReply({ reason: result.reason, current: result.draft, revision, tapTarget }),
+  );
 }
 
 // What the channel calls for every tap. Senders with no linked identity get

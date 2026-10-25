@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import type { DraftRecord } from "@/lib/drafts/records";
+import { failureFor } from "@/lib/review";
 import { COPY } from "@/lib/whatsapp/copy";
 import {
   type InboundDeps,
@@ -50,6 +52,13 @@ function deps(overrides: Record<string, unknown> = {}) {
 }
 
 const voice = { type: "audio" as const, fetchData: async () => Buffer.from("a") };
+
+// A failed requestRevision built the way lib/review.ts builds it, with the real
+// failureFor reading the reason off the current draft.
+function failedRevision(current: Pick<DraftRecord, "id" | "status" | "revision"> | null, revision: number) {
+  const draft = current as DraftRecord | null;
+  return { ok: false, reason: failureFor(draft, revision, "edit"), draft };
+}
 
 describe("planInbound", () => {
   it("ignores strangers without touching anything else", async () => {
@@ -182,15 +191,47 @@ describe("planInbound", () => {
     });
   });
 
-  it("sends no card when the current draft is no longer pending", async () => {
+  it("says the draft is approved, with no card, when an approved draft moved on", async () => {
+    const d = deps({
+      takePendingEdit: vi.fn().mockResolvedValue({ draftId: "d1", revision: 2, platform: "x" }),
+      requestRevision: vi.fn().mockResolvedValue(failedRevision({ id: "d1", status: "approved", revision: 3 }, 2)),
+    });
+    const plan = await planInbound(message({ text: "shorter" }), d.as);
+    expect(plan).toEqual({ kind: "reply", text: COPY.alreadyApproved, brandId: "b1" });
+  });
+
+  it("says the draft was skipped, with no card, when the edit target is skipped", async () => {
+    const d = deps({
+      takePendingEdit: vi.fn().mockResolvedValue({ draftId: "d1", revision: 2, platform: "x" }),
+      requestRevision: vi.fn().mockResolvedValue(failedRevision({ id: "d1", status: "skipped", revision: 2 }, 2)),
+    });
+    const plan = await planInbound(message({ text: "shorter" }), d.as);
+    expect(plan).toEqual({ kind: "reply", text: COPY.alreadySkipped, brandId: "b1" });
+  });
+
+  it("keeps the stale line and the card for a new revision of a pending draft", async () => {
     const d = deps({
       takePendingEdit: vi.fn().mockResolvedValue({ draftId: "d1", revision: 2, platform: "x" }),
       requestRevision: vi
         .fn()
-        .mockResolvedValue({ ok: false, reason: "stale", draft: { id: "d1", status: "approved" } }),
+        .mockResolvedValue(failedRevision({ id: "d1", status: "pending_review", revision: 3 }, 2)),
     });
     const plan = await planInbound(message({ text: "shorter" }), d.as);
-    expect(plan).not.toHaveProperty("cardDraftId");
+    expect(plan).toEqual({
+      kind: "reply",
+      text: "That draft changed. Showing the latest.",
+      brandId: "b1",
+      cardDraftId: "d1",
+    });
+  });
+
+  it("says a missing edit target is gone", async () => {
+    const d = deps({
+      takePendingEdit: vi.fn().mockResolvedValue({ draftId: "d1", revision: 2, platform: "x" }),
+      requestRevision: vi.fn().mockResolvedValue(failedRevision(null, 2)),
+    });
+    const plan = await planInbound(message({ text: "shorter" }), d.as);
+    expect(plan).toEqual({ kind: "reply", text: "That draft is gone.", brandId: "b1" });
   });
 
   it("uses a quoted card as the edit target", async () => {

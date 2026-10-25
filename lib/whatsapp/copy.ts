@@ -9,6 +9,8 @@ export const COPY = {
   voiceFailed: "I couldn't make out that voice note. Could you type it?",
   approved: (label: string) => `Approved the ${label} draft. It waits in Studio under Up next.`,
   skipped: (label: string) => `Skipped the ${label} draft. You can restore it in Studio.`,
+  alreadyApproved: "That draft is already approved. It waits in Studio under Up next.",
+  alreadySkipped: "That draft was skipped. You can restore it in Studio.",
   editPrompt: (label: string) => `What should I change in the ${label} draft? Reply with text or a voice note.`,
   nothingToReview: "Nothing from that idea is waiting for review.",
 } as const;

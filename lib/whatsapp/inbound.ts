@@ -5,11 +5,11 @@ import { parseLinkCommand, redeemLinkCode } from "@/lib/link-codes";
 import { findWaMessage } from "@/lib/notify/store";
 import { PLATFORMS } from "@/lib/platforms";
 import { getRedis } from "@/lib/redis";
-import { requestRevision, reviewFailureMessage } from "@/lib/review";
+import { requestRevision } from "@/lib/review";
 import { isBsuid, sendWhatsApp, textMessage } from "@/lib/whatsapp/cloud-api";
 import { COPY } from "@/lib/whatsapp/copy";
 import { sendReviewCards } from "@/lib/whatsapp/deliver";
-import { takePendingEdit } from "@/lib/whatsapp/review";
+import { reviewFailureReply, takePendingEdit } from "@/lib/whatsapp/review";
 import { transcribeVoiceNote } from "@/lib/whatsapp/transcribe";
 import { touchWindow } from "@/lib/whatsapp/window";
 
@@ -207,12 +207,18 @@ export async function planInbound(message: InboundMessage, overrides: Partial<In
       expectedRevision: target.revision,
     });
     if (!revision.ok) {
-      const current = revision.draft;
+      const failure = reviewFailureReply({
+        reason: revision.reason,
+        current: revision.draft,
+        revision: target.revision,
+      });
+      // Only a repeated tap is silent; an edit reply always gets an answer.
+      if (failure.kind === "silent") return { kind: "ignore" };
       return {
         kind: "reply",
-        text: reviewFailureMessage(revision.reason),
+        text: failure.text,
         brandId,
-        ...(current && current.status === "pending_review" ? { cardDraftId: current.id } : {}),
+        ...(failure.card ? { cardDraftId: failure.card.id } : {}),
       };
     }
     context.push(editInstruction(target.label, target.draftId));
