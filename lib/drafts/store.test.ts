@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => {
     update: vi.fn(() => chain),
     values,
     wheres,
+    sets: [] as unknown[],
   };
 });
 
@@ -137,11 +138,16 @@ beforeEach(() => {
     mocks.wheres.push(condition);
     return chain;
   };
+  chain.set = (values: unknown) => {
+    mocks.sets.push(values);
+    return chain;
+  };
   chain.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
     Promise.resolve(mocks.rows()).then(resolve, reject);
   mocks.select.mockImplementation(() => chain);
   mocks.update.mockImplementation(() => chain);
   mocks.wheres.length = 0;
+  mocks.sets.length = 0;
 });
 
 describe("saveGeneratedDraft", () => {
@@ -358,6 +364,16 @@ describe("brand scoping", () => {
     mocks.rows.mockResolvedValueOnce([]);
     expect(await store.markIdeaRequested("b1", "i1")).toBeNull();
     expect(render(mocks.wheres[0])).toContain('"brand_id" = $');
+  });
+
+  it("clearIdeaRequested clears the request for that brand's idea only", async () => {
+    mocks.rows.mockResolvedValueOnce([]);
+    await store.clearIdeaRequested("b1", "i1");
+    expect(mocks.sets).toEqual([{ draftRequestedAt: null }]);
+    const where = render(mocks.wheres[0]);
+    expect(where).toContain('"idea"."id" = $');
+    expect(where).toContain('"idea"."brand_id" = $');
+    expect(params(mocks.wheres[0])).toEqual(["i1", "b1"]);
   });
 });
 

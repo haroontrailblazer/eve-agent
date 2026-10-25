@@ -120,6 +120,7 @@ function fakeDeps(options: {
   readonly saveResult?: "stale" | "not_found" | "already_there";
   readonly pieceThrows?: Error;
   readonly pieceGone?: boolean;
+  readonly clearThrows?: boolean;
 }) {
   const asked: Record<Short, string[]> = { x: [], linkedin: [], threads: [], reel_script: [], carousel_outline: [] };
   const saved: Omit<SaveGeneratedDraftInput, "brandId">[] = [];
@@ -127,6 +128,7 @@ function fakeDeps(options: {
   const attached: { readonly id: string; readonly mediaId: string }[] = [];
   const prompts: string[] = [];
   const writers = { opened: 0 };
+  const requests = { cleared: 0 };
 
   const deps: DraftingDeps = {
     openWriter() {
@@ -182,6 +184,10 @@ function fakeDeps(options: {
       attached.push({ id: input.pieceId, mediaId: input.mediaId });
       return true;
     },
+    async clearIdeaRequest() {
+      requests.cleared += 1;
+      if (options.clearThrows) throw new Error("connection reset");
+    },
   };
 
   return Object.assign(deps, {
@@ -191,6 +197,7 @@ function fakeDeps(options: {
     attached,
     prompts,
     writers,
+    requests,
   });
 }
 
@@ -230,6 +237,25 @@ describe("runDrafting", () => {
     const result = await runDrafting(deps, plan({ targets: ["x", "threads"] }));
     expect(result).toMatchObject({ ok: true, failed: [{ target: "post:x", message: "boom" }] });
     expect(result.ok && result.drafts.map((d) => d.platform)).toEqual(["threads"]);
+  });
+
+  it("clears the idea's request once when a target failed, so Studio offers Try again", async () => {
+    const deps = fakeDeps({ replies: { x: [{ ok: false, message: "boom" }], linkedin: [{ ok: false, message: "boom" }] } });
+    await runDrafting(deps, plan({ targets: ["x", "linkedin"] }));
+    expect(deps.requests.cleared).toBe(1);
+  });
+
+  it("leaves the idea's request alone when nothing failed", async () => {
+    const deps = fakeDeps({ replies: { x: [post("x", ["a"])] } });
+    await runDrafting(deps, plan({ targets: ["x", "threads"], existing: { threads: { draftId: "d2", revision: 1 } } }));
+    expect(deps.requests.cleared).toBe(0);
+  });
+
+  it("still reports the run when clearing the request throws", async () => {
+    const deps = fakeDeps({ replies: { x: [{ ok: false, message: "boom" }], threads: [post("threads", ["ok"])] }, clearThrows: true });
+    const result = await runDrafting(deps, plan({ targets: ["x", "threads"] }));
+    expect(result).toMatchObject({ ok: true, drafts: [{ platform: "threads" }], failed: [{ target: "post:x", message: "boom" }] });
+    expect(deps.requests.cleared).toBe(1);
   });
 
   it("fails a target whose posts are all blank", async () => {

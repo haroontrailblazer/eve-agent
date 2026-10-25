@@ -96,6 +96,8 @@ export interface DraftingDeps {
   // False when the draft moved on (or the piece is gone) before the image landed.
   attachDraftImage(input: { readonly draftId: string; readonly revision: number; readonly mediaId: string }): Promise<boolean>;
   attachPieceImage(input: { readonly pieceId: string; readonly mediaId: string }): Promise<boolean>;
+  // Ends the idea's drafting request, so Studio offers Try again at once.
+  clearIdeaRequest(): Promise<void>;
 }
 
 export const EMPTY_POST_MESSAGE = "The writer returned an empty post.";
@@ -385,6 +387,16 @@ export async function runDrafting(deps: DraftingDeps, plan: DraftingPlan): Promi
   }
   drafts.sort((a, b) => SOCIAL_PLATFORM_KEYS.indexOf(a.platform) - SOCIAL_PLATFORM_KEYS.indexOf(b.platform));
   pieces.sort((a, b) => PIECE_KINDS.indexOf(a.kind) - PIECE_KINDS.indexOf(b.kind));
+
+  // A run with failed targets is over: without this, Studio would show the
+  // idea as drafting until the request went stale.
+  if (failed.length > 0) {
+    try {
+      await deps.clearIdeaRequest();
+    } catch {
+      // Best effort: the drafts and the failures are what the run reports.
+    }
+  }
 
   return { ok: true, ideaId: plan.ideaId, drafts, pieces, skipped, failed };
 }

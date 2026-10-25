@@ -6,6 +6,7 @@ import { containsLink } from "@/lib/drafts/lint";
 import type { DraftingDeps, DraftingPlan, RevisionPlan, SavePieceResult } from "@/lib/drafts/orchestrate";
 import type { ContentPieceRecord, DraftRecord, IdeaRecord } from "@/lib/drafts/records";
 import {
+  clearIdeaRequested,
   createIdea,
   getDraft,
   getIdea,
@@ -75,6 +76,15 @@ export async function prepareDrafting(
   try {
     await enforceRateLimit({ key: brandId, limit: DRAFT_RUNS_PER_HOUR, prefix: "draft:run", windowSeconds: HOUR_SECONDS });
   } catch (error) {
+    // A refused run for a saved idea ends its request, so Studio offers Try
+    // again at once. Best effort: the refusal is what gets reported.
+    if (ideaId !== "") {
+      try {
+        await clearIdeaRequested(brandId, ideaId);
+      } catch {
+        // The refusal matters more than the clear.
+      }
+    }
     if (error instanceof RateLimitError) {
       return { ok: false, message: `Drafting limit reached (${DRAFT_RUNS_PER_HOUR} an hour). Try again later.` };
     }
@@ -183,6 +193,13 @@ export async function attachDraftImageStep(input: {
   });
 }
 
+// Ends the idea's drafting request after a run with failed targets. A thrown
+// error is retried; runDrafting treats a final failure as best effort.
+export async function clearIdeaRequestStep(input: { readonly brandId: string; readonly ideaId: string }): Promise<void> {
+  "use step";
+  await clearIdeaRequested(input.brandId, input.ideaId);
+}
+
 export async function attachPieceImageStep(input: {
   readonly brandId: string;
   readonly pieceId: string;
@@ -195,7 +212,12 @@ export async function attachPieceImageStep(input: {
 
 export async function prepareRevision(
   ctx: WorkflowStepToolContext,
-  input: { readonly draftId: string; readonly instruction: string; readonly regenerateImage?: boolean },
+  input: {
+    readonly draftId: string;
+    readonly instruction: string;
+    readonly regenerateImage?: boolean;
+    readonly allowLinksOnX?: boolean;
+  },
 ): Promise<{ readonly ok: true; readonly plan: RevisionPlan; readonly brandId: string; readonly userId: string } | Failure> {
   "use step";
 
@@ -203,18 +225,29 @@ export async function prepareRevision(
   if (!brandContext) return { ok: false, message: "You need to be signed in to revise drafts." };
   const { brandId, userId } = brandContext;
 
+  // A refused revision clears the draft's request, so its card stops showing
+  // it as being refined. Best effort: the refusal is what gets reported.
+  const refuse = async (message: string): Promise<Failure> => {
+    try {
+      await clearRevisionRequest(brandId, input.draftId);
+    } catch {
+      // The refusal matters more than the clear.
+    }
+    return { ok: false, message };
+  };
+
   try {
     await enforceRateLimit({ key: brandId, limit: REVISIONS_PER_HOUR, prefix: "draft:revise", windowSeconds: HOUR_SECONDS });
   } catch (error) {
     if (error instanceof RateLimitError) {
-      return { ok: false, message: `Revision limit reached (${REVISIONS_PER_HOUR} an hour). Try again later.` };
+      return refuse(`Revision limit reached (${REVISIONS_PER_HOUR} an hour). Try again later.`);
     }
-    return { ok: false, message: `Couldn't check the revision limit: ${errorMessage(error)}` };
+    return refuse(`Couldn't check the revision limit: ${errorMessage(error)}`);
   }
 
   const draft = await getDraft(brandId, input.draftId);
-  if (!draft) return { ok: false, message: "That draft is gone." };
-  if (!canApply("edit", draft.status)) return { ok: false, message: "That draft can't be changed now." };
+  if (!draft) return refuse("That draft is gone.");
+  if (!canApply("edit", draft.status)) return refuse("That draft can't be changed now.");
 
   // A revision has no stored sources. If the idea is gone, the draft's own
   // text stands in for it.
@@ -239,8 +272,9 @@ export async function prepareRevision(
         exemplars: exemplarsFor(context.examples, target, ideaText),
         idea: ideaText,
         sources: [],
-        // A link the owner already accepted on X is not repaired away.
-        allowLinksOnX: draft.platform === "x" && containsLink(draft.text),
+        // Allowed when the owner asks for a link, and a link the owner
+        // already accepted on X is not repaired away.
+        allowLinksOnX: input.allowLinksOnX === true || (draft.platform === "x" && containsLink(draft.text)),
       },
       currentPosts: draft.posts,
       instruction: input.instruction,

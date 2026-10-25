@@ -4,6 +4,7 @@ import { runDrafting, writerConversation } from "@/lib/drafts/orchestrate";
 import {
   attachDraftImageStep,
   attachPieceImageStep,
+  clearIdeaRequestStep,
   generateImageStep,
   prepareDrafting,
   saveDraftStep,
@@ -43,6 +44,7 @@ export default defineWorkflowTool({
         generateImage: (prompt) => generateImageStep({ brandId, userId, prompt }),
         attachDraftImage: (image) => attachDraftImageStep({ ...image, brandId }),
         attachPieceImage: (image) => attachPieceImageStep({ ...image, brandId }),
+        clearIdeaRequest: () => clearIdeaRequestStep({ brandId, ideaId: plan.ideaId }),
       },
       plan,
     );

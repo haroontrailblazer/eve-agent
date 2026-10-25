@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
     RateLimitError,
     enforceRateLimit: vi.fn(),
     generateOrEditImage: vi.fn(),
+    isMediaConfigured: vi.fn(),
     saveMediaAsset: vi.fn(),
   };
 });
@@ -19,12 +20,14 @@ vi.mock("@/lib/rate-limit", () => ({
 }));
 vi.mock("@/lib/image-gen", () => ({ generateOrEditImage: mocks.generateOrEditImage }));
 vi.mock("@/lib/media/assets", () => ({ saveMediaAsset: mocks.saveMediaAsset }));
+vi.mock("@/lib/setup", () => ({ isMediaConfigured: mocks.isMediaConfigured }));
 
 const { generateBrandImage } = await import("@/lib/media/generate");
 
 const input = { brandId: "brand-1", userId: "user-1", prompt: "a red kite" };
 
 beforeEach(() => {
+  mocks.isMediaConfigured.mockReset().mockReturnValue(true);
   mocks.enforceRateLimit.mockReset().mockResolvedValue(undefined);
   mocks.generateOrEditImage.mockReset().mockResolvedValue({ base64: "AQID", mediaType: "image/png" });
   mocks.saveMediaAsset.mockReset().mockResolvedValue({ id: "media-1", url: "https://blob.example/media-1.png" });
@@ -54,6 +57,17 @@ describe("generateBrandImage", () => {
     const sourceImage = { bytes: new Uint8Array([9]), mediaType: "image/jpeg" };
     await generateBrandImage({ ...input, sourceImage });
     expect(mocks.generateOrEditImage).toHaveBeenCalledWith({ prompt: "a red kite", sourceImage });
+  });
+
+  it("stops before the limit and the model when there is no Blob store", async () => {
+    mocks.isMediaConfigured.mockReturnValue(false);
+    expect(await generateBrandImage(input)).toEqual({
+      ok: false,
+      message: "Images need a Blob store. Connect one in Vercel to add images.",
+    });
+    expect(mocks.enforceRateLimit).not.toHaveBeenCalled();
+    expect(mocks.generateOrEditImage).not.toHaveBeenCalled();
+    expect(mocks.saveMediaAsset).not.toHaveBeenCalled();
   });
 
   it("stops at the daily image limit", async () => {

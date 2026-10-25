@@ -3,17 +3,25 @@ import { errorMessage } from "@/lib/mcp-client";
 import { saveMediaAsset } from "@/lib/media/assets";
 import { IMAGE_GENERATIONS_PER_DAY } from "@/lib/media/limits";
 import { enforceRateLimit, RateLimitError } from "@/lib/rate-limit";
+import { isMediaConfigured } from "@/lib/setup";
 
 const DAY_SECONDS = 86_400;
+export const MEDIA_NOT_CONFIGURED_MESSAGE = "Images need a Blob store. Connect one in Vercel to add images.";
 
 // Server only. Generates (or edits) one image for a brand under the daily
-// image limit and stores it as a media asset. Never throws.
+// image limit and stores it as a media asset. Never throws. Without a Blob
+// store it stops before the limit and the model, so a failed save never
+// costs an image.
 export async function generateBrandImage(input: {
   readonly brandId: string;
   readonly userId: string;
   readonly prompt: string;
   readonly sourceImage?: SourceImage;
 }): Promise<{ readonly ok: true; readonly mediaId: string; readonly url: string } | { readonly ok: false; readonly message: string }> {
+  if (!isMediaConfigured()) {
+    return { ok: false, message: MEDIA_NOT_CONFIGURED_MESSAGE };
+  }
+
   try {
     await enforceRateLimit({
       key: input.brandId,

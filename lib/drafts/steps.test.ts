@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => {
     saveContentPiece: vi.fn(),
     setDraftMedia: vi.fn(),
     setPieceMedia: vi.fn(),
+    clearIdeaRequested: vi.fn(),
+    clearRevisionRequest: vi.fn(),
     createIdea: vi.fn(),
     enforceRateLimit: vi.fn(),
     getActiveVoiceGuide: vi.fn(),
@@ -38,6 +40,7 @@ vi.mock("@/lib/voice/store", () => ({
   listVoicePreferences: mocks.listVoicePreferences,
 }));
 vi.mock("@/lib/drafts/store", () => ({
+  clearIdeaRequested: mocks.clearIdeaRequested,
   createIdea: mocks.createIdea,
   getIdea: mocks.getIdea,
   getDraft: mocks.getDraft,
@@ -49,10 +52,11 @@ vi.mock("@/lib/drafts/store", () => ({
   setDraftMedia: mocks.setDraftMedia,
   setPieceMedia: mocks.setPieceMedia,
 }));
-vi.mock("@/lib/review", () => ({ completeRevision: vi.fn(), clearRevisionRequest: vi.fn() }));
+vi.mock("@/lib/review", () => ({ completeRevision: vi.fn(), clearRevisionRequest: mocks.clearRevisionRequest }));
 vi.mock("@/lib/media/generate", () => ({ generateBrandImage: vi.fn() }));
 
-const { attachDraftImageStep, attachPieceImageStep, prepareDrafting, prepareRevision, savePieceStep } = await import("@/lib/drafts/steps");
+const { attachDraftImageStep, attachPieceImageStep, clearIdeaRequestStep, prepareDrafting, prepareRevision, savePieceStep } =
+  await import("@/lib/drafts/steps");
 
 function ctxWith(attributes: Record<string, unknown>): WorkflowStepToolContext {
   return { session: { auth: { current: { attributes } } } } as unknown as WorkflowStepToolContext;
@@ -123,6 +127,25 @@ describe("prepareDrafting", () => {
     });
     expect(mocks.enforceRateLimit).toHaveBeenCalledWith({ key: "brand-1", limit: 20, prefix: "draft:run", windowSeconds: 3_600 });
     expect(mocks.createIdea).not.toHaveBeenCalled();
+    expect(mocks.clearIdeaRequested).not.toHaveBeenCalled();
+  });
+
+  it("ends a saved idea's request when the run is refused", async () => {
+    mocks.enforceRateLimit.mockRejectedValue(new mocks.RateLimitError("Too many requests."));
+    expect(await prepareDrafting(ctx, { ideaId: "idea-1" })).toEqual({
+      ok: false,
+      message: "Drafting limit reached (20 an hour). Try again later.",
+    });
+    expect(mocks.clearIdeaRequested).toHaveBeenCalledWith("brand-1", "idea-1");
+  });
+
+  it("still reports the refusal when ending the request fails", async () => {
+    mocks.enforceRateLimit.mockRejectedValue(new Error("redis down"));
+    mocks.clearIdeaRequested.mockRejectedValue(new Error("connection reset"));
+    expect(await prepareDrafting(ctx, { ideaId: "idea-1" })).toEqual({
+      ok: false,
+      message: "Couldn't check the drafting limit: redis down",
+    });
   });
 
   it("reports an idea that is gone", async () => {
@@ -292,6 +315,11 @@ describe("expected misses come back as results, so the workflow doesn't retry th
     expect(await attachPieceImageStep({ brandId: "brand-1", pieceId: "piece-1", mediaId: "media-1" })).toBe(false);
   });
 
+  it("ends the idea's request for the run's brand", async () => {
+    await clearIdeaRequestStep({ brandId: "brand-1", ideaId: "idea-1" });
+    expect(mocks.clearIdeaRequested).toHaveBeenCalledWith("brand-1", "idea-1");
+  });
+
   it("still throws when the database fails during an attach", async () => {
     mocks.setDraftMedia.mockRejectedValue(new Error("connection reset"));
     await expect(attachDraftImageStep({ brandId: "brand-1", draftId: "d", revision: 1, mediaId: "m" })).rejects.toThrow("connection reset");
@@ -321,23 +349,44 @@ describe("prepareRevision", () => {
   it("needs a signed-in brand", async () => {
     mocks.resolveBrandContext.mockResolvedValue(null);
     expect(await prepareRevision(ctx, input)).toEqual({ ok: false, message: "You need to be signed in to revise drafts." });
+    expect(mocks.clearRevisionRequest).not.toHaveBeenCalled();
   });
 
-  it("applies the hourly revision limit", async () => {
+  it("applies the hourly revision limit and clears the request", async () => {
     mocks.enforceRateLimit.mockRejectedValue(new mocks.RateLimitError("Too many requests."));
     expect(await prepareRevision(ctx, input)).toEqual({ ok: false, message: "Revision limit reached (40 an hour). Try again later." });
     expect(mocks.enforceRateLimit).toHaveBeenCalledWith({ key: "brand-1", limit: 40, prefix: "draft:revise", windowSeconds: 3_600 });
+    expect(mocks.clearRevisionRequest).toHaveBeenCalledWith("brand-1", "draft-1");
   });
 
-  it("reports a draft that is gone", async () => {
+  it("clears the request when the limit can't be checked", async () => {
+    mocks.enforceRateLimit.mockRejectedValue(new Error("redis down"));
+    expect(await prepareRevision(ctx, input)).toEqual({ ok: false, message: "Couldn't check the revision limit: redis down" });
+    expect(mocks.clearRevisionRequest).toHaveBeenCalledWith("brand-1", "draft-1");
+  });
+
+  it("reports a draft that is gone and clears its request", async () => {
     mocks.getDraft.mockResolvedValue(null);
     expect(await prepareRevision(ctx, input)).toEqual({ ok: false, message: "That draft is gone." });
     expect(mocks.getDraft).toHaveBeenCalledWith("brand-1", "draft-1");
+    expect(mocks.clearRevisionRequest).toHaveBeenCalledWith("brand-1", "draft-1");
   });
 
-  it.each(["scheduled", "publishing", "published", "failed", "skipped"])("refuses a %s draft", async (status) => {
+  it.each(["scheduled", "publishing", "published", "failed", "skipped"])("refuses a %s draft and clears its request", async (status) => {
     mocks.getDraft.mockResolvedValue(draft({ status }));
     expect(await prepareRevision(ctx, input)).toEqual({ ok: false, message: "That draft can't be changed now." });
+    expect(mocks.clearRevisionRequest).toHaveBeenCalledWith("brand-1", "draft-1");
+  });
+
+  it("still reports the refusal when clearing the request fails", async () => {
+    mocks.getDraft.mockResolvedValue(draft({ status: "skipped" }));
+    mocks.clearRevisionRequest.mockRejectedValue(new Error("connection reset"));
+    expect(await prepareRevision(ctx, input)).toEqual({ ok: false, message: "That draft can't be changed now." });
+  });
+
+  it("leaves the request alone when the revision goes ahead", async () => {
+    expect(await prepareRevision(ctx, input)).toMatchObject({ ok: true });
+    expect(mocks.clearRevisionRequest).not.toHaveBeenCalled();
   });
 
   it("builds the same brief context as drafting, with no sources", async () => {
@@ -375,6 +424,14 @@ describe("prepareRevision", () => {
     mocks.getDraft.mockResolvedValue(draft({ platform: "linkedin", text: "Read https://example.com/a" }));
     const linkedin = await prepareRevision(ctx, input);
     expect(linkedin.ok && linkedin.plan.brief.allowLinksOnX).toBe(false);
+  });
+
+  it("allows a link on an X draft without one when the owner asks", async () => {
+    const asked = await prepareRevision(ctx, { ...input, allowLinksOnX: true });
+    expect(asked.ok && asked.plan.brief.allowLinksOnX).toBe(true);
+
+    const notAsked = await prepareRevision(ctx, { ...input, allowLinksOnX: false });
+    expect(notAsked.ok && notAsked.plan.brief.allowLinksOnX).toBe(false);
   });
 
   it("uses the draft's own text when the idea is gone", async () => {

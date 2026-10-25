@@ -74,6 +74,15 @@ export async function markIdeaRequested(brandId: string, ideaId: string): Promis
   return row ? toIdeaRecord(row) : null;
 }
 
+// Ends an idea's drafting request, so Studio offers Try again at once instead
+// of showing it as drafting until the request goes stale.
+export async function clearIdeaRequested(brandId: string, ideaId: string): Promise<void> {
+  await db
+    .update(idea)
+    .set({ draftRequestedAt: null })
+    .where(and(eq(idea.id, ideaId), eq(idea.brandId, brandId)));
+}
+
 export async function getIdea(brandId: string, ideaId: string): Promise<IdeaRecord | null> {
   const [row] = await db
     .select()
