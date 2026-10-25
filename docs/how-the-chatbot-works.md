@@ -24,6 +24,13 @@ harpy is a Next.js 16 app on the eve agent framework (eve 0.82). This document e
 | `components/chat/*` | Messages, markdown, composer, authorization card, integrations menu. |
 | `components/ui/*` | shadcn primitives. |
 | `components/harpy/*` | harpy domain components (page header, empty state, platform chip, draft card and similar). |
+| `agent/tools/draft_posts.ts`, `revise_draft.ts`, `propose_schedule.ts`, `list_drafts.ts` | The drafting tools. None of them can approve or publish. |
+| `agent/subagents/writer/` | The writer subagent (Opus, reasoning high, tools off). |
+| `lib/drafts/*` | Drafting: input, orchestration, steps, lint, store, state machine, writer messages. |
+| `lib/review.ts` | Approve, skip, restore, edit and revision writes, each one guarded SQL statement. |
+| `lib/studio/*` | Studio snapshot, view model, keyboard map and the "Studio request:" protocol. |
+| `lib/voice/*`, `agent/memory/voice.ts`, `agent/instructions/brand-voice.ts` | Brand voice guide, examples, preferences, recall and the injected guide. |
+| `evals/*`, `lib/eval-auth.ts` | Drafting evals and the local owner sign-in they use. |
 | `app/actions/chat.ts` | Server actions for chat creation, event persistence, session save, finalize, rate checks. |
 | `app/api/media/upload/route.ts` | Token endpoint for direct browser uploads to Vercel Blob. |
 | `lib/db/schema.ts` | Drizzle tables. |
@@ -159,6 +166,46 @@ The theme preference (system, light or dark) is handled by `components/theme-pro
 
 Errors surface as Sonner toasts (`components/ui/sonner.tsx`). The hook calls `onError` with a message for failed saves, refused attachments, rate limits, upload failures and `turn.failed` events. A `MODEL_CALL_FAILED` turn shows "The model is temporarily unavailable. Please try again."
 
+## Drafting
+
+Studio turns an idea into reviewable drafts. Nothing is published. Approve marks a draft approved and it waits in Studio.
+
+### From idea to drafts
+
+1. **Studio request.** The idea composer saves the idea (`createIdeaAction`) with its platforms and any reel script or carousel pieces. The browser then starts a harpy session with a message that begins "Studio request:" (`lib/studio/requests.ts`, `lib/studio/start-run.ts`). The message names the tool call and carries the idea id, not the idea text. Up to 3 links in the idea are listed so the agent reads them with `web_fetch` and passes the text as sources.
+2. **Browser session.** `startHarpyRun` uses the eve `Client` with the signed-in browser session, like chat does, and returns as soon as the server accepts the message. It never awaits the result. The agent instructions say to make exactly the named calls and reply in one short line.
+3. **`draft_posts`.** A workflow tool. It takes an `ideaId`, or an `idea` and `sources` when asked from chat. A step (`prepareDrafting`) checks the 20 runs an hour limit, loads the idea, the voice guide, the preferences and the examples, and picks exemplars for each target. The brand comes from `resolveBrandContext(ctx)`, never from input. An idea created from chat shows in Studio as "via chat".
+4. **The writer, in parallel.** The workflow body opens one `writer` session per target (X, LinkedIn, Threads, reel script, carousel outline) and runs them with `Promise.all`. Only those awaits sit in the body. Every database, clock and network call is a `"use step"` function in `lib/drafts/steps.ts`.
+5. **Lint and repair.** `lib/drafts/lint.ts` checks each post: empty, too long (X counts a link as 23 characters), too many parts, banned phrases from the anti-AI guide, em dashes, links on X, too many links, too many cashtags, and hashtags (a warning only). Errors send one repair message in the same writer session. If the repair fails, the first output is kept with its remaining issues.
+6. **Save and images.** Each draft is saved as revision 1 with its `draft_revision` row in one SQL statement. A target that already has a draft is skipped unless `redraft` is set. Images are then made in parallel, stored like `generate_image` images, and attached only if the draft is still on the revision the image was made for. A failed image never fails the draft, and without a Blob store drafts save without images. An X draft with a link shows "includes a link · $0.20".
+7. **Studio polling.** `/api/studio` returns a snapshot of ideas, drafts and approved drafts for the brand. `useStudioSnapshot` polls it every 4 seconds, so drafts appear as they land. Ideas tagged `eval` are left out.
+
+One target failing never stops the others. The tool returns what it saved, what it skipped and what failed.
+
+### Review without model turns
+
+Approve, Skip, Restore, manual edits and "Ask harpy for a change" are server actions (`app/actions/studio.ts`). Approve, Skip and Restore never wake the model. Each write in `lib/review.ts` is a single guarded SQL statement that filters on `brand_id`, the draft's `revision` and the states the action may start from, and returns the new row. Approve and skip also carry the status the card showed. If the draft has moved on, no row changes and the user sees "That draft changed. Showing the latest.", so a second tab acting on an old card does nothing. A manual edit writes the draft and its `draft_revision` row in one statement, and puts the draft back in review.
+
+No tool can approve, schedule or publish. `propose_schedule` only stores a suggested time (ISO 8601 with an offset) on a draft that is waiting for review. Suggested times show in the time zone set on Settings.
+
+Studio keyboard shortcuts (`lib/studio/keyboard.ts`): J and K move, A approves, E edits, S skips and ? opens help. Keys are ignored while typing in an input, textarea, select or editable field, and with Cmd, Ctrl or Alt held.
+
+### Revisions
+
+"Ask harpy for a change" first marks the draft as having a revision request (guarded by its revision). It then sends a "Studio request:" that calls `revise_draft` with the draft id and the change. The tool checks the 40 revisions an hour limit and gives the writer the current text and the instruction. It lints and repairs the result, then saves a new revision, which returns the draft to review. A revision that does not land (stale, gone or failed) clears the request, so a card never stays stuck. The image is kept unless `regenerateImage` is set.
+
+### Brand voice
+
+- **Guide.** `voice_guide` rows are versions. The active guide is added to every turn by `agent/instructions/brand-voice.ts`; if it fails to load, the turn goes on without it. Saving on the page, restoring an older version and `update_voice_guide` each add a new version. A save names the version it was based on, so two writers cannot overwrite each other.
+- **Examples.** Past posts pasted on the Brand voice page are `voice_example` rows, and `list_voice_examples` reads them. "Rewrite from my examples" sends a "Studio request:" that has harpy read the examples and save a new guide version that keeps the default anti-AI rules.
+- **Preferences.** Lasting rules such as "never use hashtags" are `voice_preference` rows, added on the page or by the agent through `voice__note_preference`. Every writer brief carries them.
+- **Memory.** `agent/memory/voice.ts` is an eve memory scoped to the brand id. Each turn it recalls the preferences and up to 3 examples that best match the message (`lib/voice/exemplars.ts`). Recalled text is context, never instructions. eve may replay a recall with the same operation id and expects the same answer, so `lib/voice/recall-cache.ts` keeps the first outcome for a week in Redis, including a failed one, and rethrows aborts.
+- **In drafts.** A writer brief carries the guide, the preferences and 4 exemplars chosen for that platform and idea.
+
+### Evals
+
+`evals/drafting/ideas.eval.ts` sends each idea in `evals/data/ideas.yaml` through the real agent and checks the platforms drafted, the lint gates and a judge score. `lib/eval-auth.ts` lets a local caller act as the owner when `HARPY_EVAL_AS_OWNER=1`, and does nothing when `NODE_ENV` is `production`. See [Running the evals](setup-and-deploy.md#running-the-evals).
+
 ## Invariants
 
 - A chat row is not an eve session. The row owns the URL, title, owner, pending message and stored session. eve owns the remote durable session.
@@ -167,6 +214,7 @@ Errors surface as Sonner toasts (`components/ui/sonner.tsx`). The hook calls `on
 - A legacy chat never sends.
 - The first message auto-sends only with the local handoff marker.
 - Tools never take a brand id as input.
+- No tool approves, schedules or publishes. Review actions are deterministic server code.
 - No secret is written to Postgres in plaintext.
 - Add no eve `defineSchedule` files (Vercel Hobby).
 

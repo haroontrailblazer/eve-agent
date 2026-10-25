@@ -17,6 +17,15 @@ Done on the `harpy-v2` branch:
 
 Not done yet: migrations 0006 to 0009 are generated but not applied, and the manual verification pass has not been run. See the owner checklist in [Setup and Deployment](docs/setup-and-deploy.md#owner-verification-checklist). Publishing, scheduling and the real content pages come in later phases.
 
+## Stage 2 status: Studio and drafting
+
+- **Studio.** Type an idea, pick platforms (and optionally a reel script or carousel outline), and harpy writes drafts in your voice. Review them with Approve, Skip, Restore, hand edits or "Ask harpy for a change", or with keyboard shortcuts (J, K, A, E, S, ?). Approve, Skip and Restore are plain server actions, not model turns.
+- **Drafting from chat.** Ask in Chat, for example "Draft a LinkedIn post about our hiring mistakes", and the draft shows in Studio as "via chat". Drafting uses the `draft_posts`, `revise_draft`, `propose_schedule` and `list_drafts` tools and a writer subagent.
+- **Brand voice.** A versioned voice guide, example posts and lasting preferences, used in every draft and every turn.
+- **Evals.** `pnpm evals` runs the drafting evals. Run them only against a non-production database (see [Running the evals](docs/setup-and-deploy.md#running-the-evals)).
+
+Not in stage 2: nothing publishes (Approve marks a draft approved and it waits in Studio), WhatsApp review cards come in stage 3, and learning from edits comes in stage 5. Migration 0010 only adds tables. See the [stage 2 notes and owner checklist](docs/setup-and-deploy.md#stage-2-studio-and-drafting).
+
 ## Setup
 
 Requirements: Node.js 24 or newer, pnpm 10.12.4 (through Corepack), a Vercel account.
@@ -67,4 +76,4 @@ Without Docker, `pnpm eve:build` uses the `just-bash` sandbox provider, which is
 
 ## Agent code
 
-Edit the agent in `agent/agent.ts`. Its behavior is defined in `agent/instructions.md`, and tools live in `agent/tools/`. Tools never take a brand id as input. They read the brand from the verified `auth.attributes`. Read the guides in `node_modules/eve/docs/` before changing eve code.
+Edit the agent in `agent/agent.ts`. Its behavior is defined in `agent/instructions.md`, and tools live in `agent/tools/`. The writer subagent is in `agent/subagents/writer/`. Tools never take a brand id as input. They read the brand from the verified `auth.attributes`. Read the guides in `node_modules/eve/docs/` before changing eve code.

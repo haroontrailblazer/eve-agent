@@ -45,6 +45,10 @@ harpy is a private social media control room on eve 0.82 and Next.js 16. Use thi
 
 - Define local tools in `agent/tools/<snake_case>.ts` with `defineTool(...)`. The filename becomes the tool name, so keep it ASCII snake_case.
 - Define Vercel Connect MCP connections in `agent/connections/<name>.ts` with `defineMcpClientConnection(...)` and `connect(process.env.ENV_NAME ?? "local-name")`.
+- Drafting tools: `draft_posts` and `revise_draft` are `defineWorkflowTool`s. The body stays deterministic, I/O lives in `"use step"` functions in `lib/drafts/steps.ts`, and only `ctx.agent("writer")` awaits sit in the body. `propose_schedule`, `list_drafts`, `update_voice_guide` and `list_voice_examples` are plain tools. None may approve, schedule or publish.
+- The `writer` subagent (`agent/subagents/writer/`) runs `anthropic/claude-opus-5.5` with reasoning `"high"` and tools off. Each target gets its own session, and a lint repair is a second turn in it.
+- Studio sends messages that start with "Studio request:" (`lib/studio/requests.ts`), and the agent makes exactly the named tool calls. Approve, skip, restore and manual edits are server actions with guarded SQL in `lib/review.ts`, never model turns.
+- Brand voice lives in `agent/memory/voice.ts` (recall and `voice__note_preference`) and `agent/instructions/brand-voice.ts` (the active guide each turn). Recall is cached by operation id because eve may replay it.
 - Composer connection toggles are per-turn intent, not provisioning or OAuth state.
 - MCP tokens and OAuth state are encrypted with `SOCIAL_TOKEN_ENCRYPTION_KEY`. Never write a secret to Postgres in plaintext.
 - Add no eve `defineSchedule` files (Vercel Hobby fails deploys on crons that run more than once a day).
@@ -57,4 +61,4 @@ harpy is a private social media control room on eve 0.82 and Next.js 16. Use thi
 ## Verification
 
 - Run `pnpm test`, `pnpm typecheck` and `pnpm build`. Run `pnpm eve:build` too, or `pnpm exec eve build --skip-sandbox-prewarm` on a machine without Docker.
-- For chat changes, walk checklist M1 in `docs/setup-and-deploy.md` (first message, follow-up, refresh mid-stream, stop, authorization Connect and Skip, attachments, image generation and editing, legacy chats).
+- For chat changes, walk checklist M1 in `docs/setup-and-deploy.md`, and the stage 2 owner checklist for Studio and drafting, (first message, follow-up, refresh mid-stream, stop, authorization Connect and Skip, attachments, image generation and editing, legacy chats).
