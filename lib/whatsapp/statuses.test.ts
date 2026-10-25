@@ -115,6 +115,17 @@ describe("handleStatuses", () => {
     expect(mocks.markNotificationFailed).toHaveBeenCalledWith({ id: "n1", error: "nope" });
   });
 
+  it("fails the notification when the template send throws after a won claim", async () => {
+    mocks.findWaMessage.mockResolvedValue({ brandId: "b1", draftId: "d1", revision: 1, kind: "card", notificationId: "n1" });
+    mocks.claimTemplateFallback.mockResolvedValue(notification);
+    mocks.sendDraftsReadyTemplate.mockRejectedValue(new Error("db down"));
+
+    await handleStatuses([failed131047]);
+
+    expect(mocks.markNotificationFailed).toHaveBeenCalledWith({ id: "n1", error: "db down" });
+    expect(mocks.markNotificationSent).not.toHaveBeenCalled();
+  });
+
   it("fails the notification for a template wamid", async () => {
     mocks.findWaMessage.mockResolvedValue(null);
     mocks.findNotificationByProviderMessageId.mockResolvedValue(notification);

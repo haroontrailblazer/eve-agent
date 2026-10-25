@@ -64,7 +64,17 @@ async function sendTemplateFallback(notificationId: string): Promise<void> {
   // Only the first status for a notification wins the claim; retries stop here.
   const notification = await claimTemplateFallback(notificationId);
   if (!notification) return;
-  const template = await sendDraftsReadyTemplate(notification);
+  let template: Awaited<ReturnType<typeof sendDraftsReadyTemplate>>;
+  try {
+    template = await sendDraftsReadyTemplate(notification);
+  } catch (error) {
+    // The claim already marked the row sent; fail it so a retry can take it.
+    await markNotificationFailed({
+      id: notification.id,
+      error: error instanceof Error ? error.message : "Template send failed.",
+    });
+    return;
+  }
   if (!template.ok) {
     await markNotificationFailed({ id: notification.id, error: template.message });
     return;
