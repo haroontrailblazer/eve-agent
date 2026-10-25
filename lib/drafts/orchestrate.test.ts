@@ -113,8 +113,10 @@ function fakeDeps(options: {
   readonly replies: Partial<Record<Short, WriterReply[]>>;
   readonly imageFails?: boolean;
   readonly attachFails?: boolean;
-  readonly saveResult?: "stale" | "already_there";
+  readonly attachMisses?: boolean;
+  readonly saveResult?: "stale" | "not_found" | "already_there";
   readonly pieceThrows?: Error;
+  readonly pieceGone?: boolean;
 }) {
   const asked: Record<Short, string[]> = { x: [], linkedin: [], threads: [], reel_script: [], carousel_outline: [] };
   const saved: Omit<SaveGeneratedDraftInput, "brandId">[] = [];
@@ -137,6 +139,7 @@ function fakeDeps(options: {
     async saveDraft(input) {
       saved.push(input);
       if (options.saveResult === "stale") return { ok: false, reason: "stale", draft: null };
+      if (options.saveResult === "not_found") return { ok: false, reason: "not_found", draft: null };
       if (options.saveResult === "already_there") {
         return { ok: true, draft: draftRecord(input, "draft-other", 1), created: false };
       }
@@ -146,6 +149,7 @@ function fakeDeps(options: {
     async savePiece(input) {
       savedPieces.push(input);
       if (options.pieceThrows) throw options.pieceThrows;
+      if (options.pieceGone) return { ok: false, reason: "idea_gone" };
       const piece: ContentPieceRecord = {
         id: `piece-${input.kind}`,
         ideaId: input.ideaId,
@@ -157,7 +161,7 @@ function fakeDeps(options: {
         createdAt: "2026-10-24T10:00:00.000Z",
         updatedAt: "2026-10-24T10:00:00.000Z",
       };
-      return { piece, created: input.mode === "create" };
+      return { ok: true, piece, created: input.mode === "create" };
     },
     async generateImage(prompt) {
       prompts.push(prompt);
@@ -165,11 +169,15 @@ function fakeDeps(options: {
       return { ok: true, mediaId: `media-${prompts.length}`, url: `https://blob.example/media-${prompts.length}.png` };
     },
     async attachDraftImage(input) {
-      if (options.attachFails) throw new Error("revision moved");
+      if (options.attachFails) throw new Error("connection reset");
+      if (options.attachMisses) return false;
       attached.push({ id: input.draftId, mediaId: input.mediaId });
+      return true;
     },
     async attachPieceImage(input) {
+      if (options.attachMisses) return false;
       attached.push({ id: input.pieceId, mediaId: input.mediaId });
+      return true;
     },
   };
 
@@ -242,6 +250,13 @@ describe("runDrafting", () => {
     expect(deps.saved[0]!.mode).toEqual({ expectedRevision: 2 });
   });
 
+  it("reports a draft whose idea is gone", async () => {
+    const deps = fakeDeps({ replies: { x: [post("x", ["a"], { imagePrompt: "a desk" })] }, saveResult: "not_found" });
+    const result = await runDrafting(deps, plan({ targets: ["x"] }));
+    expect(result).toMatchObject({ ok: true, drafts: [], failed: [{ target: "post:x", message: "That idea is gone." }] });
+    expect(deps.prompts).toHaveLength(0);
+  });
+
   it("reports a redraft that lost the race as changed", async () => {
     const deps = fakeDeps({ replies: { x: [post("x", ["New."])] }, saveResult: "stale" });
     const result = await runDrafting(deps, plan({ targets: ["x"], existing: { x: { draftId: "d1", revision: 2 } }, redraft: true }));
@@ -286,6 +301,22 @@ describe("runDrafting", () => {
     expect(result).toMatchObject({ ok: true, failed: [], drafts: [{ platform: "x", imageUrl: null, imageError: expect.any(String) }] });
   });
 
+  it("reports an image that missed its draft's revision", async () => {
+    const deps = fakeDeps({ replies: { x: [post("x", ["a"], { imagePrompt: "a desk" })] }, attachMisses: true });
+    const result = await runDrafting(deps, plan({ targets: ["x"] }));
+    expect(result).toMatchObject({
+      ok: true,
+      failed: [],
+      drafts: [{ platform: "x", imageUrl: null, imageError: "That draft changed before its image was added." }],
+    });
+  });
+
+  it("leaves a carousel without a cover when the piece is gone before it lands", async () => {
+    const deps = fakeDeps({ replies: { carousel_outline: [carousel()] }, attachMisses: true });
+    const result = await runDrafting(deps, plan({ targets: ["carousel_outline"] }));
+    expect(result).toMatchObject({ ok: true, failed: [], pieces: [{ kind: "carousel_outline", imageUrl: null }] });
+  });
+
   it("saves a carousel and generates its cover", async () => {
     const deps = fakeDeps({ replies: { carousel_outline: [{ ok: true, data: { title: "T", slides: [{ heading: "a", body: "b" }, { heading: "c", body: "d" }, { heading: "e", body: "f" }], coverImagePrompt: "cover", caption: "c", notes: "" } }] } });
     const result = await runDrafting(deps, plan({ targets: ["carousel_outline"] }));
@@ -309,8 +340,7 @@ describe("runDrafting", () => {
   });
 
   it("reports a piece whose idea is gone", async () => {
-    const gone = Object.assign(new Error("That idea is gone."), { name: "IdeaNotFoundError" });
-    const deps = fakeDeps({ replies: { reel_script: [reel()], x: [post("x", ["a"])] }, pieceThrows: gone });
+    const deps = fakeDeps({ replies: { reel_script: [reel()], x: [post("x", ["a"])] }, pieceGone: true });
     const result = await runDrafting(deps, plan({ targets: ["x", "reel_script"] }));
     expect(result).toMatchObject({ ok: true, drafts: [{ platform: "x" }], failed: [{ target: "piece:reel_script", message: "That idea is gone." }] });
   });
@@ -363,6 +393,35 @@ describe("writeTarget", () => {
       },
     };
   }
+
+  it("keeps the first output when the repair turn fails", async () => {
+    const { conversation, asked } = scripted([post("x", ["a".repeat(300)]), { ok: false, message: "overloaded" }]);
+    const result = await writeTarget(conversation, brief({ kind: "post", platform: "x" }), { kind: "draft" });
+    expect(asked).toHaveLength(2);
+    expect(result).toMatchObject({ ok: true, output: { posts: ["a".repeat(300)] } });
+    expect(result.ok && result.issues.some((i) => i.code === "too_long")).toBe(true);
+  });
+
+  it("keeps the first output when the repair turn throws", async () => {
+    let turns = 0;
+    const conversation = {
+      async ask(): Promise<WriterReply> {
+        turns += 1;
+        if (turns === 1) return post("x", ["a".repeat(300)]);
+        throw new Error("socket hang up");
+      },
+    };
+    const result = await writeTarget(conversation, brief({ kind: "post", platform: "x" }), { kind: "draft" });
+    expect(turns).toBe(2);
+    expect(result).toMatchObject({ ok: true, output: { posts: ["a".repeat(300)] } });
+    expect(result.ok && result.issues.some((i) => i.code === "too_long")).toBe(true);
+  });
+
+  it("keeps the first output when the repair comes back empty", async () => {
+    const { conversation } = scripted([post("x", ["a".repeat(300)]), post("x", ["  "])]);
+    const result = await writeTarget(conversation, brief({ kind: "post", platform: "x" }), { kind: "draft" });
+    expect(result).toMatchObject({ ok: true, output: { posts: ["a".repeat(300)] } });
+  });
 
   it("keeps the first output when the repair fails to parse", async () => {
     const { conversation, asked } = scripted([post("x", ["a".repeat(300)]), { ok: true, data: { nope: true } }]);

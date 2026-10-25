@@ -7,8 +7,14 @@ const mocks = vi.hoisted(() => {
     readonly retryAfter = 60;
   }
 
+  class IdeaNotFoundError extends Error {}
+
   return {
+    IdeaNotFoundError,
     RateLimitError,
+    saveContentPiece: vi.fn(),
+    setDraftMedia: vi.fn(),
+    setPieceMedia: vi.fn(),
     createIdea: vi.fn(),
     enforceRateLimit: vi.fn(),
     getActiveVoiceGuide: vi.fn(),
@@ -33,16 +39,17 @@ vi.mock("@/lib/voice/store", () => ({
 vi.mock("@/lib/drafts/store", () => ({
   createIdea: mocks.createIdea,
   getIdea: mocks.getIdea,
+  IdeaNotFoundError: mocks.IdeaNotFoundError,
   listDraftsForIdea: mocks.listDraftsForIdea,
   listPiecesForIdea: mocks.listPiecesForIdea,
-  saveContentPiece: vi.fn(),
+  saveContentPiece: mocks.saveContentPiece,
   saveGeneratedDraft: vi.fn(),
-  setDraftMedia: vi.fn(),
-  setPieceMedia: vi.fn(),
+  setDraftMedia: mocks.setDraftMedia,
+  setPieceMedia: mocks.setPieceMedia,
 }));
 vi.mock("@/lib/media/generate", () => ({ generateBrandImage: vi.fn() }));
 
-const { prepareDrafting } = await import("@/lib/drafts/steps");
+const { attachDraftImageStep, attachPieceImageStep, prepareDrafting, savePieceStep } = await import("@/lib/drafts/steps");
 
 function ctxWith(attributes: Record<string, unknown>): WorkflowStepToolContext {
   return { session: { auth: { current: { attributes } } } } as unknown as WorkflowStepToolContext;
@@ -240,5 +247,50 @@ describe("prepareDrafting", () => {
       "Teams ship weekly",
       "Dinner",
     ]);
+  });
+});
+
+describe("expected misses come back as results, so the workflow doesn't retry them", () => {
+  const pieceInput = {
+    brandId: "brand-1",
+    ideaId: "idea-1",
+    kind: "reel_script" as const,
+    title: "Reel",
+    body: { hook: "h", beats: [], caption: "c", notes: "" },
+    mode: "create" as const,
+  };
+
+  it("returns a saved piece", async () => {
+    const piece = { id: "piece-1" };
+    mocks.saveContentPiece.mockResolvedValue({ piece, created: true });
+    expect(await savePieceStep(pieceInput)).toEqual({ ok: true, piece, created: true });
+  });
+
+  it("returns idea_gone for a piece whose idea is gone", async () => {
+    mocks.saveContentPiece.mockRejectedValue(new mocks.IdeaNotFoundError("That idea is gone."));
+    expect(await savePieceStep(pieceInput)).toEqual({ ok: false, reason: "idea_gone" });
+  });
+
+  it("still throws an infrastructure error so it is retried", async () => {
+    mocks.saveContentPiece.mockRejectedValue(new Error("connection reset"));
+    await expect(savePieceStep(pieceInput)).rejects.toThrow("connection reset");
+  });
+
+  it("returns whether the draft image landed on the revision", async () => {
+    mocks.setDraftMedia.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const input = { brandId: "brand-1", draftId: "draft-1", revision: 2, mediaId: "media-1" };
+    expect(await attachDraftImageStep(input)).toBe(true);
+    expect(await attachDraftImageStep(input)).toBe(false);
+    expect(mocks.setDraftMedia).toHaveBeenCalledWith({ brandId: "brand-1", draftId: "draft-1", revision: 2, mediaIds: ["media-1"] });
+  });
+
+  it("returns whether the piece image landed", async () => {
+    mocks.setPieceMedia.mockResolvedValue(false);
+    expect(await attachPieceImageStep({ brandId: "brand-1", pieceId: "piece-1", mediaId: "media-1" })).toBe(false);
+  });
+
+  it("still throws when the database fails during an attach", async () => {
+    mocks.setDraftMedia.mockRejectedValue(new Error("connection reset"));
+    await expect(attachDraftImageStep({ brandId: "brand-1", draftId: "d", revision: 1, mediaId: "m" })).rejects.toThrow("connection reset");
   });
 });

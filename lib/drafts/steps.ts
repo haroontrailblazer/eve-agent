@@ -2,11 +2,12 @@ import type { WorkflowStepToolContext } from "eve/tools";
 import { getBrandSettings } from "@/lib/db/brands";
 import { ideaSourceChannel, resolveTargets, type DraftPostsInput } from "@/lib/drafts/input";
 import { DRAFT_RUNS_PER_HOUR } from "@/lib/drafts/limits";
-import type { DraftingDeps, DraftingPlan } from "@/lib/drafts/orchestrate";
+import type { DraftingDeps, DraftingPlan, SavePieceResult } from "@/lib/drafts/orchestrate";
 import type { ContentPieceRecord, DraftRecord, IdeaRecord } from "@/lib/drafts/records";
 import {
   createIdea,
   getIdea,
+  IdeaNotFoundError,
   listDraftsForIdea,
   listPiecesForIdea,
   saveContentPiece,
@@ -160,9 +161,16 @@ export async function saveDraftStep(input: SaveGeneratedDraftInput): ReturnType<
   return saveGeneratedDraft(input);
 }
 
-export async function savePieceStep(input: Parameters<typeof saveContentPiece>[0]): ReturnType<typeof saveContentPiece> {
+// Expected misses come back as results: a thrown error would be retried.
+// Anything else still throws, so the workflow retries it.
+export async function savePieceStep(input: Parameters<typeof saveContentPiece>[0]): Promise<SavePieceResult> {
   "use step";
-  return saveContentPiece(input);
+  try {
+    return { ok: true, ...(await saveContentPiece(input)) };
+  } catch (error) {
+    if (error instanceof IdeaNotFoundError) return { ok: false, reason: "idea_gone" };
+    throw error;
+  }
 }
 
 export async function generateImageStep(input: {
@@ -179,23 +187,23 @@ export async function attachDraftImageStep(input: {
   readonly draftId: string;
   readonly revision: number;
   readonly mediaId: string;
-}): Promise<void> {
+}): Promise<boolean> {
   "use step";
-  const attached = await setDraftMedia({
+  // False when the draft's revision moved on before the image landed.
+  return setDraftMedia({
     brandId: input.brandId,
     draftId: input.draftId,
     revision: input.revision,
     mediaIds: [input.mediaId],
   });
-  if (!attached) throw new Error("That draft changed before its image was added.");
 }
 
 export async function attachPieceImageStep(input: {
   readonly brandId: string;
   readonly pieceId: string;
   readonly mediaId: string;
-}): Promise<void> {
+}): Promise<boolean> {
   "use step";
-  const attached = await setPieceMedia({ brandId: input.brandId, pieceId: input.pieceId, mediaIds: [input.mediaId] });
-  if (!attached) throw new Error("That piece is gone.");
+  // False when the piece is gone.
+  return setPieceMedia({ brandId: input.brandId, pieceId: input.pieceId, mediaIds: [input.mediaId] });
 }

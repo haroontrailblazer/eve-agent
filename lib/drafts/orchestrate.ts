@@ -1,5 +1,6 @@
 import type { AgentSendOptions } from "eve/tools";
 import { hasLintErrors, lintPost, lintText, type LintIssue } from "@/lib/drafts/lint";
+import type { ContentPieceRecord } from "@/lib/drafts/records";
 import type { saveContentPiece, SaveGeneratedDraftInput, SaveGeneratedDraftResult } from "@/lib/drafts/store";
 import { PIECE_KINDS, SOCIAL_PLATFORM_KEYS, targetKey, type DraftTarget, type PieceKind, type SocialPlatform } from "@/lib/drafts/types";
 import {
@@ -76,17 +77,24 @@ export type DraftingPlan = {
 
 type PieceSaveInput = Parameters<typeof saveContentPiece>[0];
 
+// saveContentPiece's result, or the idea being gone. Steps return expected
+// misses instead of throwing them, so the workflow doesn't retry them.
+export type SavePieceResult =
+  | { readonly ok: true; readonly piece: ContentPieceRecord; readonly created: boolean }
+  | { readonly ok: false; readonly reason: "idea_gone" };
+
 // The tool binds brandId (and userId for images) to every step, so nothing
 // here can write to another brand.
 export interface DraftingDeps {
   openWriter(): WriterConversation;
   saveDraft(input: Omit<SaveGeneratedDraftInput, "brandId">): Promise<SaveGeneratedDraftResult>;
-  savePiece(input: Omit<PieceSaveInput, "brandId">): ReturnType<typeof saveContentPiece>;
+  savePiece(input: Omit<PieceSaveInput, "brandId">): Promise<SavePieceResult>;
   generateImage(
     prompt: string,
   ): Promise<{ readonly ok: true; readonly mediaId: string; readonly url: string } | { readonly ok: false; readonly message: string }>;
-  attachDraftImage(input: { readonly draftId: string; readonly revision: number; readonly mediaId: string }): Promise<void>;
-  attachPieceImage(input: { readonly pieceId: string; readonly mediaId: string }): Promise<void>;
+  // False when the draft moved on (or the piece is gone) before the image landed.
+  attachDraftImage(input: { readonly draftId: string; readonly revision: number; readonly mediaId: string }): Promise<boolean>;
+  attachPieceImage(input: { readonly pieceId: string; readonly mediaId: string }): Promise<boolean>;
 }
 
 export const EMPTY_POST_MESSAGE = "The writer returned an empty post.";
@@ -97,6 +105,7 @@ const WRITER_STOPPED_MESSAGE = "The writer stopped before finishing.";
 const SAVE_FAILED_MESSAGE = "Couldn't save this draft. Try again.";
 const IMAGE_FAILED_MESSAGE = "Image generation failed.";
 const ATTACH_FAILED_MESSAGE = "The image was made but couldn't be added to the draft.";
+const ATTACH_MISSED_MESSAGE = "That draft changed before its image was added.";
 
 // The slice of eve's AgentSession the writer conversation uses.
 export interface WriterSession {
@@ -146,9 +155,9 @@ function review(brief: WriterBrief, output: WriterOutput): WriteResult {
   };
 }
 
-// Asks the writer once, and once more to repair lint errors. A repair that
-// doesn't parse keeps the first output; whatever is returned carries its
-// remaining issues.
+// Asks the writer once, and once more to repair lint errors. A repair turn
+// that fails, throws, doesn't parse or comes back empty keeps the first
+// output; whatever is returned carries its remaining issues.
 export async function writeTarget(
   conversation: WriterConversation,
   brief: WriterBrief,
@@ -169,11 +178,17 @@ export async function writeTarget(
   if (!reviewed.ok || !hasLintErrors(reviewed.issues)) return reviewed;
 
   const errors = reviewed.issues.filter((issue) => issue.severity === "error");
-  const second = await conversation.ask(buildRepairMessage(errors), brief.target);
-  if (!second.ok) return second;
+  let second: WriterReply;
+  try {
+    second = await conversation.ask(buildRepairMessage(errors), brief.target);
+  } catch {
+    return reviewed;
+  }
+  if (!second.ok) return reviewed;
   const repaired = parseWriterOutput(brief.target, second.data);
   if (!repaired.ok) return reviewed;
-  return review(brief, repaired.output);
+  const rereviewed = review(brief, repaired.output);
+  return rereviewed.ok ? rereviewed : reviewed;
 }
 
 type PlanTarget = DraftingPlan["targets"][number];
@@ -232,7 +247,10 @@ async function savePost(
     notes: output.notes,
     mode,
   });
-  if (!saved.ok) return { kind: "failed", target: key, message: DRAFT_CHANGED_MESSAGE };
+  if (!saved.ok) {
+    const message = saved.reason === "not_found" ? IDEA_GONE_MESSAGE : DRAFT_CHANGED_MESSAGE;
+    return { kind: "failed", target: key, message };
+  }
   // Another run created this draft first; ours was not written.
   if (mode === "create" && !saved.created) return { kind: "skipped", target: key };
 
@@ -275,6 +293,7 @@ async function savePieceOutcome(
   }
 
   const saved = await deps.savePiece({ ideaId: plan.ideaId, kind, title, body, mode });
+  if (!saved.ok) return { kind: "failed", target: targetKey(entry.target), message: IDEA_GONE_MESSAGE };
   if (mode === "create" && !saved.created) return { kind: "skipped", target: targetKey(entry.target) };
   return {
     kind: "piece",
@@ -308,7 +327,7 @@ async function draftOne(deps: DraftingDeps, plan: DraftingPlan, entry: PlanTarge
 async function addImage(
   deps: DraftingDeps,
   prompt: string,
-  attach: (mediaId: string) => Promise<void>,
+  attach: (mediaId: string) => Promise<boolean>,
 ): Promise<{ readonly url: string; readonly error: null } | { readonly url: null; readonly error: string }> {
   let image: Awaited<ReturnType<DraftingDeps["generateImage"]>>;
   try {
@@ -317,12 +336,13 @@ async function addImage(
     return { url: null, error: IMAGE_FAILED_MESSAGE };
   }
   if (!image.ok) return { url: null, error: image.message };
+  let attached: boolean;
   try {
-    await attach(image.mediaId);
+    attached = await attach(image.mediaId);
   } catch {
     return { url: null, error: ATTACH_FAILED_MESSAGE };
   }
-  return { url: image.url, error: null };
+  return attached ? { url: image.url, error: null } : { url: null, error: ATTACH_MISSED_MESSAGE };
 }
 
 function hasPrompt(prompt: string | null): prompt is string {
