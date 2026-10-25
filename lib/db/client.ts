@@ -44,12 +44,14 @@ export const REQUIRED_TABLES = [
   "draft_revision",
   "idea",
   "media_asset",
+  "notification",
   "session",
   "user",
   "verification",
   "voice_example",
   "voice_guide",
   "voice_preference",
+  "wa_message_map",
 ] as const;
 
 // Tables are never dropped at runtime, so once the schema is ready it stays
