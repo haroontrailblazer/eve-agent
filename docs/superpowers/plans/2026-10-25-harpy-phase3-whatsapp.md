@@ -499,12 +499,12 @@ git commit -m "feat(identity): one principal for linked channels, owner bootstra
   | Name | Body | Example params | Quick replies |
   |---|---|---|---|
   | `harpy_morning_brief` | `Your content brief for {{1}} is ready: {{2}} trends and {{3}} post ideas.` | `Thu 22 Oct`, `3`, `5` | `Show brief`, `Not today` |
-  | `harpy_drafts_ready` | `You have {{1}} new drafts to review: {{2}}` | `3`, `Small teams ship faster` | `Review` |
-  | `harpy_post_published` | `Your {{1}} post is live.` | `LinkedIn` | `View post` |
-  | `harpy_post_failed` | `Your {{1}} post could not be published: {{2}}` | `X`, `the image was too large` | `Retry`, `Open` |
-  | `harpy_new_activity` | `{{1}} new replies and mentions. {{2}} may need a response.` | `4`, `2` | `Review now`, `Later` |
-  | `harpy_weekly_report` | `Your weekly summary for {{1}} is ready.` | `19 to 25 Oct` | `Show summary` |
-  | `harpy_reconnect_needed` | `Your {{1}} connection needs you to sign in again by {{2}}.` | `LinkedIn`, `Mon 14 Dec` | `Open Channels` |
+  | `harpy_drafts_ready` | `Drafts ready to review: {{1}}, from your idea "{{2}}". Tap Review to see them.` | `3`, `Small teams ship faster` | `Review` |
+  | `harpy_post_published` | `Your {{1}} post is live. Tap View post to open it.` | `LinkedIn` | `View post` |
+  | `harpy_post_failed` | `Your {{1}} post could not be published: {{2}}. Tap Retry to try again.` | `X`, `the image was too large` | `Retry`, `Open` |
+  | `harpy_new_activity` | `New replies and mentions: {{1}}. {{2}} may need a response.` | `4`, `2` | `Review now`, `Later` |
+  | `harpy_weekly_report` | `Your weekly summary for {{1}} is ready. Tap Show summary to read it.` | `19 to 25 Oct` | `Show summary` |
+  | `harpy_reconnect_needed` | `Your {{1}} connection needs you to sign in again by {{2}}. Tap Open Channels to reconnect.` | `LinkedIn`, `Mon 14 Dec` | `Open Channels` |
 
 - **`templateMessage`** builds:
   ```ts
