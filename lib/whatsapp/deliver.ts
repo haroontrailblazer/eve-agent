@@ -8,6 +8,7 @@ import type { DraftRecord } from "@/lib/drafts/records";
 import { getIdea, listDraftsForIdea } from "@/lib/drafts/store";
 import { getMediaAsset } from "@/lib/media/assets";
 import {
+  claimFailedNotification,
   insertNotification,
   markNotificationFailed,
   markNotificationSent,
@@ -127,15 +128,39 @@ export async function notifyDraftsReady(input: {
     .update(`${waId}|${ideaId}|${revisions}${resendKey ? `|${resendKey}` : ""}`)
     .digest("hex");
 
-  const { created, notification } = await insertNotification({
+  const inserted = await insertNotification({
     brandId,
     recipient: waId,
     kind: "drafts_ready",
     dedupeKey: `drafts_ready:${digest}`,
     payload: { kind: "drafts_ready", ideaId, drafts: drafts.map((draft) => ({ id: draft.id, revision: draft.revision })) },
   });
-  if (!created) return { ok: true, delivery: "duplicate", sent: 0 };
+  let notification = inserted.notification;
+  if (!inserted.created) {
+    // A failed notification keeps its dedupe key; a retry takes it back.
+    const claimed = notification.status === "failed" ? await claimFailedNotification(notification.id) : null;
+    if (!claimed) return { ok: true, delivery: "duplicate", sent: 0 };
+    notification = claimed;
+  }
 
+  try {
+    return await deliver({ brandId, waId, drafts, notification });
+  } catch (error) {
+    await markNotificationFailed({
+      id: notification.id,
+      error: error instanceof Error ? error.message : "Delivery failed.",
+    });
+    return { ok: false, reason: "send_failed", message: SEND_FAILED_MESSAGE };
+  }
+}
+
+async function deliver(input: {
+  readonly brandId: string;
+  readonly waId: string;
+  readonly drafts: readonly DraftRecord[];
+  readonly notification: NotificationRecord;
+}): Promise<NotifyResult> {
+  const { brandId, waId, drafts, notification } = input;
   if (await isWindowOpen(waId)) {
     const outcome = await sendReviewCards({ brandId, waId, drafts, notificationId: notification.id });
     if (!outcome.windowClosed) {

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({ execute: vi.fn() }));
 vi.mock("@/lib/db/client", () => ({ db: { execute: mocks.execute } }));
 
 const {
+  claimFailedNotification,
   claimTemplateFallback,
   findWaMessage,
   getNotification,
@@ -105,6 +106,19 @@ describe("notification store", () => {
   it("returns null when the fallback was already claimed", async () => {
     mocks.execute.mockResolvedValueOnce({ rows: [] });
     expect(await claimTemplateFallback("n1")).toBeNull();
+  });
+
+  it("claims a failed notification back to pending", async () => {
+    mocks.execute.mockResolvedValueOnce({ rows: [rawRow({ status: "pending" })] });
+    expect(await claimFailedNotification("n1")).toMatchObject({ id: "n1", status: "pending" });
+    const { sql } = render(mocks.execute.mock.calls[0][0]);
+    expect(sql).toContain(`"status" = 'failed'`);
+    expect(sql).toContain(`"status" = 'pending'`);
+  });
+
+  it("returns null when the failed notification was already claimed", async () => {
+    mocks.execute.mockResolvedValueOnce({ rows: [] });
+    expect(await claimFailedNotification("n1")).toBeNull();
   });
 
   it("reads a notification by id, or null", async () => {

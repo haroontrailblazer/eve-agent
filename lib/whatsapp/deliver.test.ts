@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getMediaAsset: vi.fn(),
   getBrandSettings: vi.fn(),
   insertNotification: vi.fn(),
+  claimFailedNotification: vi.fn(),
   markNotificationSent: vi.fn(),
   markNotificationFailed: vi.fn(),
   recordWaMessage: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock("@/lib/media/assets", () => ({ getMediaAsset: mocks.getMediaAsset }));
 vi.mock("@/lib/db/brands", () => ({ getBrandSettings: mocks.getBrandSettings }));
 vi.mock("@/lib/notify/store", () => ({
   insertNotification: mocks.insertNotification,
+  claimFailedNotification: mocks.claimFailedNotification,
   markNotificationSent: mocks.markNotificationSent,
   markNotificationFailed: mocks.markNotificationFailed,
   recordWaMessage: mocks.recordWaMessage,
@@ -159,6 +161,38 @@ describe("notifyDraftsReady", () => {
     const result = await notifyDraftsReady(input);
     expect(result).toEqual({ ok: true, delivery: "duplicate", sent: 0 });
     expect(mocks.sendWhatsApp).not.toHaveBeenCalled();
+  });
+
+  it("re-sends a failed notification on its own row", async () => {
+    const failed = { ...NOTIFICATION, id: "n0", status: "failed", payload: { kind: "drafts_ready", ideaId: "i1", drafts: [] } };
+    mocks.insertNotification.mockResolvedValue({ created: false, notification: failed });
+    mocks.claimFailedNotification.mockResolvedValue({ ...failed, status: "pending" });
+    const result = await notifyDraftsReady(input);
+    expect(result).toEqual({ ok: true, delivery: "cards", sent: 2 });
+    expect(mocks.claimFailedNotification).toHaveBeenCalledWith("n0");
+    expect(mocks.recordWaMessage).toHaveBeenCalledWith(expect.objectContaining({ notificationId: "n0" }));
+    expect(mocks.markNotificationSent).toHaveBeenCalledWith(expect.objectContaining({ id: "n0", delivery: "service" }));
+  });
+
+  it("keeps a sent notification a duplicate without claiming", async () => {
+    mocks.insertNotification.mockResolvedValue({ created: false, notification: { ...NOTIFICATION, status: "sent" } });
+    expect(await notifyDraftsReady(input)).toEqual({ ok: true, delivery: "duplicate", sent: 0 });
+    expect(mocks.claimFailedNotification).not.toHaveBeenCalled();
+    expect(mocks.sendWhatsApp).not.toHaveBeenCalled();
+  });
+
+  it("is a duplicate when another request claimed the failed notification", async () => {
+    mocks.insertNotification.mockResolvedValue({ created: false, notification: { ...NOTIFICATION, status: "failed" } });
+    mocks.claimFailedNotification.mockResolvedValue(null);
+    expect(await notifyDraftsReady(input)).toEqual({ ok: true, delivery: "duplicate", sent: 0 });
+    expect(mocks.sendWhatsApp).not.toHaveBeenCalled();
+  });
+
+  it("marks the notification failed when a send throws", async () => {
+    mocks.sendWhatsApp.mockRejectedValue(new Error("network down"));
+    const result = await notifyDraftsReady(input);
+    expect(result).toEqual({ ok: false, reason: "send_failed", message: SEND_FAILED });
+    expect(mocks.markNotificationFailed).toHaveBeenCalledWith({ id: "n1", error: "network down" });
   });
 
   it("sends the template when the window is closed", async () => {

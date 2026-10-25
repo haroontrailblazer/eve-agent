@@ -82,6 +82,17 @@ returning *`);
   return row ? toNotification(row) : null;
 }
 
+// Only the caller that flips a failed notification back to pending wins, so a
+// retry delivers it once even when two requests race.
+export async function claimFailedNotification(id: string): Promise<NotificationRecord | null> {
+  const result = await db.execute(sql`
+update "notification" set "status" = 'pending', "updated_at" = now()
+where "id" = ${id} and "status" = 'failed'
+returning *`);
+  const row = result.rows[0];
+  return row ? toNotification(row) : null;
+}
+
 export async function getNotification(id: string): Promise<NotificationRecord | null> {
   const result = await db.execute(sql`select * from "notification" where "id" = ${id} limit 1`);
   const row = result.rows[0];
