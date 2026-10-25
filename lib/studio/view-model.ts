@@ -1,4 +1,5 @@
 import { containsLink, countPostChars, lintPost } from "@/lib/drafts/lint";
+import type { DraftRecord } from "@/lib/drafts/records";
 import { canApply, type ReviewAction } from "@/lib/drafts/state";
 import type { DraftTarget } from "@/lib/drafts/types";
 import { PLATFORMS } from "@/lib/platforms";
@@ -61,7 +62,10 @@ export function formatLocalTime(iso: string, timezone: string): string {
     .replace(/[  ]/g, " ");
 }
 
-export function draftMeta(draft: StudioDraft, timezone: string): string {
+export function draftMeta(
+  draft: Pick<DraftRecord, "platform" | "posts" | "text" | "scheduledAt">,
+  timezone: string,
+): string {
   const size =
     draft.posts.length > 1
       ? `${draft.posts.length} posts`
