@@ -68,3 +68,19 @@ export async function findUserIdByEmail(email: string): Promise<string | null> {
 
   return rows[0]?.id ?? null;
 }
+
+export async function getBrandSettings(
+  brandId: string,
+): Promise<{ readonly timezone: string; readonly name: string } | null> {
+  const rows = await db
+    .select({ timezone: brand.timezone, name: brand.name })
+    .from(brand)
+    .where(eq(brand.id, brandId))
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+export async function setBrandTimezone(brandId: string, timezone: string): Promise<void> {
+  await db.update(brand).set({ timezone, updatedAt: new Date() }).where(eq(brand.id, brandId));
+}
