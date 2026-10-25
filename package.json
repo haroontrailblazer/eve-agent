@@ -17,6 +17,7 @@
     "dev": "next dev",
     "start": "next start",
     "typecheck": "next typegen && tsgo --noEmit -p tsconfig.json",
+    "evals": "eve eval",
     "eve:build": "eve build",
     "eve:dev": "eve dev",
     "test": "vitest run",

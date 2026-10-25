@@ -17,7 +17,7 @@ export function TimelineItem({
 }) {
   return (
     <div className="flex items-center gap-3 py-2">
-      <span className="w-16 shrink-0 text-meta text-muted-foreground tabular-nums">{time}</span>
+      <span className="w-20 shrink-0 text-meta text-muted-foreground tabular-nums">{time}</span>
       <PlatformIcon
         className={cn("size-4 shrink-0", PLATFORM_TEXT_CLASS[platform])}
         platform={platform}

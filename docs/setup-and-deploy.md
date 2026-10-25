@@ -354,6 +354,47 @@ pnpm db:migrate:production
 
 After changing env vars, storage products, or Connect connectors, redeploy so production uses the newest project configuration.
 
+## Stage 2: Studio and drafting
+
+Stage 2 adds Studio, drafting from Studio and from chat, the writer subagent, and the Brand voice page. Nothing publishes yet. Approve marks a draft approved and it waits under Up next in Studio. WhatsApp review cards come in stage 3, and learning from your edits comes in stage 5.
+
+### Deploy notes
+
+- Migration `0010_studio_drafts` only adds tables (`idea`, `draft`, `draft_revision`, `content_piece`, `voice_guide`, `voice_example`, `voice_preference`). Nothing existing is altered, so the owner can run it before merging with `! pnpm db:migrate:production` (the `!` runs it from the Claude Code prompt; in a terminal, type `pnpm db:migrate:production`). Ask before any deploy or merge.
+- Draft images need a **public** Vercel Blob store connected to the project (`BLOB_READ_WRITE_TOKEN`). Without it drafts still save, without images.
+- Drafting adds no schedule, so it fits Vercel Hobby. The writer runs in its own sessions, which keeps each step well under 300 seconds. Limits are 20 drafting runs and 40 revisions an hour per brand, plus the existing 50 generated images a day.
+- The writer uses `anthropic/claude-opus-5.5` with reasoning `"high"`. The main agent is unchanged.
+
+### Running the evals
+
+The drafting evals call the real model and write ideas and drafts to whatever database `DATABASE_URL` points at. `.env.local` here points at production, so run them only against a non-production database.
+
+1. Create a separate database, for example a Neon branch, and point `DATABASE_URL` at it for this shell only.
+2. Run the app against that database and sign in once as the owner, so the owner and their brand exist there.
+3. Set `AI_GATEWAY_API_KEY`, then run:
+
+```bash
+HARPY_EVAL_AS_OWNER=1 pnpm evals
+```
+
+`HARPY_EVAL_AS_OWNER=1` makes the eve channel accept a local caller as the owner (`lib/eval-auth.ts`). It does nothing when `NODE_ENV` is `production`, which covers Vercel production and preview. Eval ideas are tagged `eval` and hidden from Studio. Each eval checks that the platforms drafted match the request, that every lint gate passes (length, parts, banned phrases, em dashes, links on X, links and cashtags, with hashtags only a warning), and that a judge scores the drafts at 0.7 or above.
+
+### Stage 2 owner checklist
+
+1. In Studio, type "Small teams ship faster because they argue less" with all three platforms. Within about 2 minutes, three drafts appear, with an image on at least one.
+2. Approve one draft. The chip reads "Approved", and it appears under Up next.
+3. Skip one draft, then Restore it.
+4. Edit one draft by hand and save. Then use "Ask harpy for a change" with "make it shorter". A new revision comes back.
+5. Use J/K to move, A/E/S on the selected draft, and ? for help. Typing in the composer triggers nothing.
+6. In Chat, send "Draft a LinkedIn post about our hiring mistakes". It appears in Studio as "via chat".
+7. With Reel script and Carousel toggled and a blog link in the idea, a reel script and a carousel outline appear, with a cover image.
+8. On Brand voice:
+   - paste 3 or more past posts, then "Rewrite from my examples", and a new version appears;
+   - restore an older version;
+   - add the preference "never use hashtags", and the next drafts carry no hashtags.
+9. In Settings, set the time zone. Suggested times in Studio show in that zone.
+10. Run `HARPY_EVAL_AS_OWNER=1 pnpm evals` locally, against a non-production database as described above. Every lint gate passes, and the judge averages 0.7 or above.
+
 ## Troubleshooting
 
 If chat is disabled and says setup is required, check the tooltip. Missing migrations will show as `database migrations`. Run:

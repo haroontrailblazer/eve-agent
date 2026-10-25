@@ -1,0 +1,47 @@
+ideas:
+  - id: first-hire-mistake
+    idea: I hired my first employee too early and it nearly sank us. We had four months of runway left and I could not tell them what to build next.
+    platforms: [x, linkedin, threads]
+  - id: friday-deploy-rule
+    idea: We stopped banning Friday deploys and started making deploys boring instead. Small changes, feature flags, one-click rollback. The ban was hiding a fear of our own pipeline.
+    platforms: [x, linkedin, threads]
+  - id: pricing-doubled
+    idea: We doubled our price last month and churn did not move. Two customers pushed back, and both stayed after a ten minute call.
+    platforms: [x, linkedin, threads]
+  - id: junior-code-review
+    idea: The best code review habit I picked up as a junior was reading the tests first. If I cannot tell what the change does from the tests, the change is not ready.
+    platforms: [x, linkedin, threads]
+  - id: saying-no-to-customers
+    idea: A customer offered us a big contract if we built a custom dashboard. We said no, and it was the right call. Here is how we decided.
+    platforms: [linkedin]
+  - id: postgres-over-everything
+    idea: We run our whole product on one Postgres database and a queue table. No Kafka, no Redis cluster. At our size it is the fastest thing to reason about at 2am.
+    platforms: [x, linkedin, threads]
+  - id: career-switch-lessons
+    idea: I switched from a support role to engineering at 29. The thing nobody told me is that my support years made me better at debugging than most of my peers.
+    platforms: [x, linkedin, threads]
+  - id: launch-day-silence
+    idea: We launched on a Tuesday and got eleven signups. I almost wrote it off. Three of them are still paying customers a year later.
+    platforms: [x]
+  - id: read-the-docs-link
+    idea: I finally read the whole Postgres documentation on indexes instead of guessing, and half my slow queries went away. The chapter that helped most is at https://www.postgresql.org/docs/current/indexes.html
+    platforms: [x, linkedin, threads]
+  - id: roadmap-in-a-page
+    idea: Our roadmap is one page with three columns, now, next and not doing. The not doing column is the one that earns its keep.
+    platforms: [x, linkedin, threads]
+  - id: oncall-first-night
+    idea: My first night on call, the alert was a full disk caused by our own debug logging. I learned to delete the log line, not the alert.
+    platforms: [threads]
+  - id: changelog-habit
+    idea: We write the changelog entry before we write the code. If I cannot explain the change to a customer in two sentences, I do not understand it yet.
+    platforms: [x, linkedin, threads]
+  - id: open-source-writeup
+    idea: I wrote up how we cut our build time from 14 minutes to 3 by caching dependencies and splitting the test run. Full write-up is here, https://example.com/blog/faster-builds, and links are fine on X for this one.
+    platforms: [x, linkedin, threads]
+    allowLinks: true
+  - id: interview-question-change
+    idea: We replaced our whiteboard interview with a paid half day on a real, small bug. Candidates who would have frozen at the whiteboard did great.
+    platforms: [x, linkedin, threads]
+  - id: talk-slides-link
+    idea: I gave a short talk on keeping side projects alive past month two. The slides are at https://example.com/talks/side-projects and the main point is to ship something tiny every week.
+    platforms: [x, linkedin, threads]
