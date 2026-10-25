@@ -150,6 +150,20 @@ export function rawDraftRow(row: Record<string, unknown>): Draft {
   };
 }
 
+export function rawContentPieceRow(row: Record<string, unknown>): ContentPiece {
+  return {
+    id: String(row.id),
+    ideaId: String(row.idea_id),
+    brandId: String(row.brand_id),
+    kind: row.kind as PieceKind,
+    title: String(row.title),
+    body: toJson<unknown>(row.body, {}),
+    mediaIds: toJson<string[]>(row.media_ids, []),
+    createdAt: toDate(row.created_at),
+    updatedAt: toDate(row.updated_at),
+  };
+}
+
 export function toIdeaRecord(row: Idea): IdeaRecord {
   return {
     id: row.id,

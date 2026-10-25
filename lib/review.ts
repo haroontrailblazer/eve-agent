@@ -5,7 +5,7 @@ import { type DraftRecord, rawDraftRow, toDraftRecord } from "@/lib/drafts/recor
 import { ACTION_FROM_STATES, type ReviewAction } from "@/lib/drafts/state";
 import { getDraft, statusList, threadPartsJson } from "@/lib/drafts/store";
 import { postsToText } from "@/lib/drafts/thread-text";
-import type { ApprovedVia } from "@/lib/drafts/types";
+import type { ApprovedVia, DraftState } from "@/lib/drafts/types";
 
 export type ReviewFailure = "not_found" | "stale" | "invalid_state";
 export type ReviewResult =
@@ -16,9 +16,11 @@ export function failureFor(
   current: DraftRecord | null,
   expectedRevision: number | null,
   _action: ReviewAction,
+  expectedStatus: DraftState | null = null,
 ): ReviewFailure {
   if (!current) return "not_found";
   if (expectedRevision !== null && current.revision !== expectedRevision) return "stale";
+  if (expectedStatus !== null && current.status !== expectedStatus) return "stale";
   return "invalid_state";
 }
 
@@ -35,34 +37,45 @@ export function reviewFailureMessage(reason: ReviewFailure): string {
 
 type Target = { readonly brandId: string; readonly draftId: string };
 
+function expectedStatusGuard(status: DraftState | undefined) {
+  return status ? sql` and "status" = ${status}` : sql``;
+}
+
 async function resolve(
   rows: readonly Record<string, unknown>[],
   target: Target,
   expectedRevision: number | null,
   action: ReviewAction,
+  expectedStatus: DraftState | null = null,
 ): Promise<ReviewResult> {
   const row = rows[0];
   if (row) return { ok: true, draft: toDraftRecord(rawDraftRow(row)) };
   const current = await getDraft(target.brandId, target.draftId);
-  return { ok: false, reason: failureFor(current, expectedRevision, action), draft: current };
+  return { ok: false, reason: failureFor(current, expectedRevision, action, expectedStatus), draft: current };
 }
 
 export async function approveDraft(
-  input: Target & { readonly expectedRevision: number; readonly via: ApprovedVia },
+  input: Target & {
+    readonly expectedRevision: number;
+    readonly via: ApprovedVia;
+    readonly expectedStatus?: DraftState;
+  },
 ): Promise<ReviewResult> {
   const result = await db.execute(sql`
 update "draft" set "status" = 'approved', "approved_at" = now(), "approved_via" = ${input.via}, "updated_at" = now()
-where "id" = ${input.draftId} and "brand_id" = ${input.brandId} and "revision" = ${input.expectedRevision} and "status" in (${statusList(ACTION_FROM_STATES.approve)})
+where "id" = ${input.draftId} and "brand_id" = ${input.brandId} and "revision" = ${input.expectedRevision} and "status" in (${statusList(ACTION_FROM_STATES.approve)})${expectedStatusGuard(input.expectedStatus)}
 returning *`);
-  return resolve(result.rows, input, input.expectedRevision, "approve");
+  return resolve(result.rows, input, input.expectedRevision, "approve", input.expectedStatus ?? null);
 }
 
-export async function skipDraft(input: Target & { readonly expectedRevision: number }): Promise<ReviewResult> {
+export async function skipDraft(
+  input: Target & { readonly expectedRevision: number; readonly expectedStatus?: DraftState },
+): Promise<ReviewResult> {
   const result = await db.execute(sql`
 update "draft" set "status" = 'skipped', "updated_at" = now()
-where "id" = ${input.draftId} and "brand_id" = ${input.brandId} and "revision" = ${input.expectedRevision} and "status" in (${statusList(ACTION_FROM_STATES.skip)})
+where "id" = ${input.draftId} and "brand_id" = ${input.brandId} and "revision" = ${input.expectedRevision} and "status" in (${statusList(ACTION_FROM_STATES.skip)})${expectedStatusGuard(input.expectedStatus)}
 returning *`);
-  return resolve(result.rows, input, input.expectedRevision, "skip");
+  return resolve(result.rows, input, input.expectedRevision, "skip", input.expectedStatus ?? null);
 }
 
 export async function restoreDraft(input: Target): Promise<ReviewResult> {

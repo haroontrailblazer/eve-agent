@@ -8,6 +8,7 @@ import {
   type DraftRecord,
   type IdeaRecord,
   type ReelScriptBody,
+  rawContentPieceRow,
   rawDraftRow,
   toContentPieceRecord,
   toDraftRecord,
@@ -157,7 +158,8 @@ export async function saveGeneratedDraft(input: SaveGeneratedDraftInput): Promis
     const result = await db.execute(sql`
 with ins as (
   insert into "draft" ("id", "idea_id", "brand_id", "platform", "status", "revision", "hook", "text", "thread_parts", "image_prompt", "scheduled_at", "notes", "created_at", "updated_at")
-  values (${draftId}, ${input.ideaId}, ${input.brandId}, ${input.platform}, 'pending_review', 1, ${input.hook}, ${text}, ${parts}::jsonb, ${input.imagePrompt}, ${input.scheduledAt}::timestamptz, ${input.notes}, now(), now())
+  select ${draftId}::text, "idea"."id", "idea"."brand_id", ${input.platform}::text, 'pending_review', 1, ${input.hook}::text, ${text}::text, ${parts}::jsonb, ${input.imagePrompt}::text, ${input.scheduledAt}::timestamptz, ${input.notes}::text, now(), now()
+  from "idea" where "idea"."id" = ${input.ideaId} and "idea"."brand_id" = ${input.brandId}
   on conflict ("idea_id", "platform") do nothing
   returning *
 ), rev as (
@@ -192,6 +194,14 @@ select * from upd`);
   return { ok: false, reason: "stale", draft: current };
 }
 
+// Thrown when the idea does not exist for this brand, so nothing was written.
+export class IdeaNotFoundError extends Error {
+  constructor() {
+    super("That idea is gone.");
+    this.name = "IdeaNotFoundError";
+  }
+}
+
 export async function saveContentPiece(input: {
   readonly brandId: string;
   readonly ideaId: string;
@@ -200,29 +210,21 @@ export async function saveContentPiece(input: {
   readonly body: ReelScriptBody | CarouselOutlineBody;
   readonly mode: "create" | "replace";
 }): Promise<{ readonly piece: ContentPieceRecord; readonly created: boolean }> {
-  const target = [contentPiece.ideaId, contentPiece.kind];
-  const insert = db.insert(contentPiece).values({
-    id: randomUUID(),
-    ideaId: input.ideaId,
-    brandId: input.brandId,
-    kind: input.kind,
-    title: input.title,
-    body: input.body,
-  });
-  const rows =
+  const conflict =
     input.mode === "create"
-      ? await insert.onConflictDoNothing({ target }).returning()
-      : await insert
-          .onConflictDoUpdate({
-            target,
-            set: { title: input.title, body: input.body, updatedAt: sql`now()` },
-            setWhere: eq(contentPiece.brandId, input.brandId),
-          })
-          .returning();
-  const row = rows[0];
+      ? sql`on conflict ("idea_id", "kind") do nothing`
+      : sql`on conflict ("idea_id", "kind") do update set "title" = excluded."title", "body" = excluded."body", "updated_at" = now() where "content_piece"."brand_id" = ${input.brandId}`;
+  const result = await db.execute(sql`
+insert into "content_piece" ("id", "idea_id", "brand_id", "kind", "title", "body", "created_at", "updated_at")
+select ${randomUUID()}::text, "idea"."id", "idea"."brand_id", ${input.kind}::text, ${input.title}::text, ${JSON.stringify(input.body)}::jsonb, now(), now()
+from "idea" where "idea"."id" = ${input.ideaId} and "idea"."brand_id" = ${input.brandId}
+${conflict}
+returning *`);
+  const row = result.rows[0];
   if (row) {
+    const record = rawContentPieceRow(row);
     // A fresh insert has createdAt equal to updatedAt (same now()); an update moves updatedAt.
-    return { piece: toContentPieceRecord(row), created: row.createdAt.getTime() === row.updatedAt.getTime() };
+    return { piece: toContentPieceRecord(record), created: record.createdAt.getTime() === record.updatedAt.getTime() };
   }
 
   const [existing] = await db
@@ -236,7 +238,7 @@ export async function saveContentPiece(input: {
       ),
     )
     .limit(1);
-  if (!existing) throw new Error("content piece could not be saved");
+  if (!existing) throw new IdeaNotFoundError();
   return { piece: toContentPieceRecord(existing), created: false };
 }
 

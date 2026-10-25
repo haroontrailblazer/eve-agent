@@ -226,3 +226,84 @@ describe("review actions", () => {
     expect(reviewFailureMessage("invalid_state")).toBe("That draft can't do that right now.");
   });
 });
+
+describe("stale and status guards", () => {
+  it("approve on a revision mismatch is stale", async () => {
+    mocks.execute.mockResolvedValueOnce({ rows: [] });
+    mocks.getDraftRows.mockResolvedValueOnce([draftRow({ revision: 5 })]);
+    expect(await approveDraft({ brandId: "b1", draftId: "d1", expectedRevision: 2, via: "web" })).toMatchObject({
+      ok: false,
+      reason: "stale",
+      draft: { revision: 5 },
+    });
+  });
+
+  it("approve with expectedStatus on a now approved draft is stale with the current draft", async () => {
+    mocks.execute.mockResolvedValueOnce({ rows: [] });
+    mocks.getDraftRows.mockResolvedValueOnce([draftRow({ status: "approved" })]);
+    expect(
+      await approveDraft({
+        brandId: "b1",
+        draftId: "d1",
+        expectedRevision: 2,
+        via: "web",
+        expectedStatus: "pending_review",
+      }),
+    ).toMatchObject({ ok: false, reason: "stale", draft: { status: "approved" } });
+  });
+
+  it("skip with expectedStatus after an approve is stale", async () => {
+    mocks.execute.mockResolvedValueOnce({ rows: [] });
+    mocks.getDraftRows.mockResolvedValueOnce([draftRow({ status: "approved" })]);
+    expect(
+      await skipDraft({ brandId: "b1", draftId: "d1", expectedRevision: 2, expectedStatus: "pending_review" }),
+    ).toMatchObject({ ok: false, reason: "stale" });
+  });
+
+  it("the status = predicate is rendered only when expectedStatus is given", async () => {
+    mocks.execute.mockResolvedValue({ rows: [rawRow()] });
+    await approveDraft({ brandId: "b1", draftId: "d1", expectedRevision: 2, via: "web" });
+    await approveDraft({
+      brandId: "b1",
+      draftId: "d1",
+      expectedRevision: 2,
+      via: "web",
+      expectedStatus: "pending_review",
+    });
+    await skipDraft({ brandId: "b1", draftId: "d1", expectedRevision: 2 });
+    await skipDraft({ brandId: "b1", draftId: "d1", expectedRevision: 2, expectedStatus: "approved" });
+    const texts = mocks.execute.mock.calls.map((call) => render(call[0]));
+    expect(texts.map((text) => /and "status" = \$/.test(text))).toEqual([false, true, false, true]);
+  });
+
+  it("failureFor is stale when the status differs from the expected one", () => {
+    expect(failureFor(record({ status: "approved" }), 2, "approve", "pending_review")).toBe("stale");
+    expect(failureFor(record({ status: "approved" }), 2, "approve")).toBe("invalid_state");
+    expect(failureFor(record({ status: "approved" }), 2, "approve", "approved")).toBe("invalid_state");
+  });
+});
+
+describe("every write renders a brand guard", () => {
+  it("covers each review write", async () => {
+    mocks.execute.mockResolvedValue({ rows: [rawRow()] });
+    await approveDraft({ brandId: "b1", draftId: "d1", expectedRevision: 2, via: "web" });
+    await skipDraft({ brandId: "b1", draftId: "d1", expectedRevision: 2 });
+    await restoreDraft({ brandId: "b1", draftId: "d1" });
+    await saveManualEdit({ brandId: "b1", draftId: "d1", expectedRevision: 2, posts: ["x"], userId: "u1" });
+    await requestRevision({ brandId: "b1", draftId: "d1", expectedRevision: 2 });
+    await completeRevision({
+      brandId: "b1",
+      draftId: "d1",
+      expectedRevision: 2,
+      hook: "h",
+      posts: ["x"],
+      imagePrompt: null,
+      instruction: "i",
+      userId: null,
+    });
+    await setProposedTime({ brandId: "b1", draftId: "d1", scheduledAt: null });
+    await clearRevisionRequest("b1", "d1");
+    expect(mocks.execute).toHaveBeenCalledTimes(8);
+    for (const call of mocks.execute.mock.calls) expect(render(call[0])).toContain('"brand_id" = $');
+  });
+});

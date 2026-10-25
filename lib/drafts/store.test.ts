@@ -241,16 +241,16 @@ describe("ideas", () => {
 });
 
 describe("saveContentPiece", () => {
-  const piece = {
+  const pieceRow = {
     id: "p1",
-    ideaId: "i1",
-    brandId: "b1",
+    idea_id: "i1",
+    brand_id: "b1",
     kind: "reel_script",
     title: "t",
     body: {},
-    mediaIds: [],
-    createdAt: new Date(NOW),
-    updatedAt: new Date(NOW),
+    media_ids: [],
+    created_at: NOW,
+    updated_at: NOW,
   };
   const input = {
     brandId: "b1",
@@ -260,30 +260,61 @@ describe("saveContentPiece", () => {
     body: { hook: "", beats: [], caption: "", notes: "" },
   };
 
-  it("create uses onConflictDoNothing on (idea_id, kind)", async () => {
-    mocks.rows.mockResolvedValueOnce([piece]);
+  it("create is an insert-select gated on the idea brand with do nothing on (idea_id, kind)", async () => {
+    mocks.execute.mockResolvedValueOnce({ rows: [pieceRow] });
     const result = await store.saveContentPiece({ ...input, mode: "create" });
     expect(result.created).toBe(true);
-    expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(1);
-    expect(mocks.onConflictDoUpdate).not.toHaveBeenCalled();
-    const target = (mocks.onConflictDoNothing.mock.calls[0][0] as { target: { name: string }[] }).target;
-    expect(target.map((c) => c.name)).toEqual(["idea_id", "kind"]);
+    const text = render(mocks.execute.mock.calls[0][0]);
+    expect(text).toContain('from "idea" where "idea"."id" = $');
+    expect(text).toContain('"idea"."brand_id" = $');
+    expect(text).toContain('on conflict ("idea_id", "kind") do nothing');
   });
 
   it("create returns the existing piece with created false", async () => {
-    mocks.rows.mockResolvedValueOnce([]).mockResolvedValueOnce([piece]);
+    mocks.execute.mockResolvedValueOnce({ rows: [] });
+    mocks.rows.mockResolvedValueOnce([
+      {
+        id: "p1",
+        ideaId: "i1",
+        brandId: "b1",
+        kind: "reel_script",
+        title: "t",
+        body: {},
+        mediaIds: [],
+        createdAt: new Date(NOW),
+        updatedAt: new Date(NOW),
+      },
+    ]);
     const result = await store.saveContentPiece({ ...input, mode: "create" });
     expect(result).toMatchObject({ created: false, piece: { id: "p1" } });
     expect(render(mocks.wheres[0])).toContain('"brand_id" = $');
   });
 
-  it("replace uses onConflictDoUpdate guarded by brand", async () => {
-    mocks.rows.mockResolvedValueOnce([{ ...piece, updatedAt: new Date("2026-10-24T11:00:00.000Z") }]);
+  it("replace does update on (idea_id, kind) guarded by brand", async () => {
+    mocks.execute.mockResolvedValueOnce({ rows: [{ ...pieceRow, updated_at: "2026-10-24T11:00:00.000Z" }] });
     const result = await store.saveContentPiece({ ...input, mode: "replace" });
     expect(result.created).toBe(false);
-    expect(mocks.onConflictDoUpdate).toHaveBeenCalledTimes(1);
-    const arg = mocks.onConflictDoUpdate.mock.calls[0][0] as { setWhere: unknown };
-    expect(render(arg.setWhere)).toContain('"brand_id" = $');
+    const text = render(mocks.execute.mock.calls[0][0]);
+    expect(text).toContain('on conflict ("idea_id", "kind") do update');
+    expect(text).toContain('"content_piece"."brand_id" = $');
+  });
+
+  it("an idea of another brand writes nothing and throws IdeaNotFoundError", async () => {
+    mocks.execute.mockResolvedValueOnce({ rows: [] });
+    mocks.rows.mockResolvedValueOnce([]);
+    await expect(store.saveContentPiece({ ...input, mode: "create" })).rejects.toBeInstanceOf(store.IdeaNotFoundError);
+  });
+});
+
+describe("foreign idea", () => {
+  it("saveGeneratedDraft create gates on the idea brand and reports not_found", async () => {
+    mocks.execute.mockResolvedValueOnce({ rows: [] });
+    mocks.rows.mockResolvedValueOnce([]);
+    const result = await store.saveGeneratedDraft({ ...baseInput, mode: "create" });
+    expect(result).toEqual({ ok: false, reason: "not_found", draft: null });
+    const text = render(mocks.execute.mock.calls[0][0]);
+    expect(text).toContain('from "idea" where "idea"."id" = $');
+    expect(text).toContain('"idea"."brand_id" = $');
   });
 });
 
@@ -327,5 +358,22 @@ describe("brand scoping", () => {
     mocks.rows.mockResolvedValueOnce([]);
     expect(await store.markIdeaRequested("b1", "i1")).toBeNull();
     expect(render(mocks.wheres[0])).toContain('"brand_id" = $');
+  });
+});
+
+describe("every write renders a brand guard", () => {
+  it("saveGeneratedDraft in both modes", async () => {
+    mocks.execute.mockResolvedValue({ rows: [rawRow()] });
+    await store.saveGeneratedDraft({ ...baseInput, mode: "create" });
+    await store.saveGeneratedDraft({ ...baseInput, mode: { expectedRevision: 1 } });
+    for (const call of mocks.execute.mock.calls) expect(render(call[0])).toContain('"brand_id" = $');
+  });
+
+  it("setDraftMedia and setPieceMedia", async () => {
+    mocks.rows.mockResolvedValue([{ id: "x" }]);
+    await store.setDraftMedia({ brandId: "b1", draftId: "d1", revision: 1, mediaIds: [] });
+    await store.setPieceMedia({ brandId: "b1", pieceId: "p1", mediaIds: [] });
+    expect(mocks.wheres).toHaveLength(2);
+    for (const where of mocks.wheres) expect(render(where)).toContain('"brand_id" = $');
   });
 });
