@@ -13,10 +13,16 @@ import { handleStatuses } from "@/lib/whatsapp/statuses";
 // only wires things up: who gets a turn, what a tap does and how a reply looks
 // are decided in lib/whatsapp.
 
+// The Chat SDK keeps every inbound message, strangers' included. Keep only what
+// the typing indicator needs (the latest inbound message) and only briefly.
+const HISTORY_MAX_MESSAGES = 10;
+const HISTORY_TTL_MS = 60 * 60 * 1000;
+
 const bridge = chatSdkChannel({
   userName: "harpy",
   adapters: { whatsapp: createHarpyWhatsAppAdapter() },
   state: createChatState(),
+  history: { thread: { maxMessages: HISTORY_MAX_MESSAGES, ttlMs: HISTORY_TTL_MS } },
   // WhatsApp can't edit sent messages, so each reply is posted once, complete.
   streaming: false,
   // The default "drop" loses messages sent while an earlier one is handled.
