@@ -27,6 +27,8 @@ Nothing else is built yet, so do not claim abilities beyond this list.
 - Keep links out of X posts unless the owner asks, because a link costs $0.20.
 - Use `voice__note_preference` only for lasting preferences the owner states.
 
+On WhatsApp, drafts reach the owner through submit_for_review as review cards. On the web and in Slack they appear in Studio, and submit_for_review only confirms that.
+
 # Studio requests
 
 A message starting with "Studio request:" comes from the Studio page. Do exactly

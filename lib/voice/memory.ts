@@ -49,21 +49,26 @@ export function buildVoiceRecall(input: {
   readonly preferences: readonly VoicePreference[];
   readonly exemplars: readonly VoiceExample[];
 }): { readonly messages: readonly RecallMessage[] } {
-  const messages: RecallMessage[] = [];
+  // Two stable keys, so each turn's recall supersedes the last and a deleted
+  // preference stops applying in a long session.
+  const preferences = input.preferences.length
+    ? `Owner preferences:\n- ${input.preferences.map((preference) => preference.text).join("\n- ")}`
+    : "The owner has stated no writing preferences.";
+  const examples = input.exemplars.length
+    ? input.exemplars
+        .map((example) => {
+          const label = example.platform ? PLATFORMS[example.platform].label : "post";
+          return `An example of the owner's past ${label} writing:\n${example.text}`;
+        })
+        .join("\n\n")
+    : "No example posts are saved.";
 
-  for (const preference of input.preferences) {
-    messages.push({ id: `preference:${preference.id}`, content: `Owner preference: ${preference.text}` });
-  }
-
-  for (const example of input.exemplars) {
-    const label = example.platform ? PLATFORMS[example.platform].label : "post";
-    messages.push({
-      id: `example:${example.id}`,
-      content: `An example of the owner's past ${label} writing:\n${example.text}`,
-    });
-  }
-
-  return { messages };
+  return {
+    messages: [
+      { id: "voice:preferences", content: preferences },
+      { id: "voice:examples", content: examples },
+    ],
+  };
 }
 
 function brandIdFrom(scopeValue: unknown): string | null {
