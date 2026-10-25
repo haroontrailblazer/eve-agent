@@ -80,13 +80,15 @@ export function DraftEditor({
         instruction: change,
       });
 
+      // Either way the editor closes. A refusal means the draft changed or is
+      // gone, so the card shows the latest version, as Save does on a conflict.
+      close = true;
+
       if (!result.ok) {
         showRequestError(result.message);
       } else {
-        // The draft is marked as being revised either way; if the run fails to
-        // start, the card stops showing it as refining after 10 minutes.
-        close = true;
-
+        // The draft is marked as being revised; if the run fails to start,
+        // the card stops showing it as refining after 10 minutes.
         try {
           await startHarpyRun(result.message);
         } catch {

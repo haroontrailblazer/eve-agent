@@ -1,3 +1,6 @@
+import { PLATFORM_LIMITS } from "@/lib/drafts/lint";
+import type { SocialPlatform } from "@/lib/drafts/types";
+
 export const EDIT_SEPARATOR = "\n---\n";
 
 export function postsToText(posts: readonly string[]): string {
@@ -21,4 +24,14 @@ export function editTextToPosts(text: string): string[] {
   }
   posts.push(current.join("\n"));
   return posts.map((post) => post.trim()).filter((post) => post.length > 0);
+}
+
+// An edit as the posts to save. A single-post platform such as LinkedIn keeps
+// a --- line as text; only thread platforms split on it.
+export function editTextToPlatformPosts(platform: SocialPlatform, text: string): string[] {
+  if (PLATFORM_LIMITS[platform].maxParts === 1) {
+    const post = text.trim();
+    return post === "" ? [] : [post];
+  }
+  return editTextToPosts(text);
 }

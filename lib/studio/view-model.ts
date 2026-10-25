@@ -1,4 +1,5 @@
 import { containsLink, countPostChars, lintPost } from "@/lib/drafts/lint";
+import { canApply, type ReviewAction } from "@/lib/drafts/state";
 import type { DraftTarget } from "@/lib/drafts/types";
 import { PLATFORMS } from "@/lib/platforms";
 import type { StudioDraft, StudioIdea, StudioSnapshot } from "@/lib/studio/types";
@@ -31,6 +32,14 @@ export function ideaPhase(idea: StudioIdea, now: Date): IdeaPhase {
 
 export function isRevising(draft: StudioDraft, now: Date): boolean {
   return within(draft.revisionRequestedAt, now);
+}
+
+// Whether a draft's card offers a review action, for the buttons and the keys
+// alike. Approve waits while harpy revises the draft: the new revision would
+// put it back in review and silently undo the approval.
+export function canReview(draft: StudioDraft, action: ReviewAction, now: Date): boolean {
+  if (action === "approve" && isRevising(draft, now)) return false;
+  return canApply(action, draft.status);
 }
 
 export function needsPolling(snapshot: StudioSnapshot, now: Date): boolean {

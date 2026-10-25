@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { snapshot, studioDraft, studioIdea } from "@/lib/studio/test-fixtures";
 import {
+  canReview,
   draftMeta,
   draftWarnings,
   formatLocalTime,
@@ -48,6 +49,29 @@ describe("isRevising", () => {
     expect(isRevising(studioDraft({ revisionRequestedAt: "2026-10-24T09:55:00Z" }), now)).toBe(true);
     expect(isRevising(studioDraft({ revisionRequestedAt: "2026-10-24T09:49:00Z" }), now)).toBe(false);
     expect(isRevising(studioDraft(), now)).toBe(false);
+  });
+});
+
+describe("canReview", () => {
+  const revising = studioDraft({ revisionRequestedAt: "2026-10-24T09:55:00Z" });
+
+  it("hides Approve while harpy revises the draft", () => {
+    expect(canReview(revising, "approve", now)).toBe(false);
+    expect(canReview(studioDraft(), "approve", now)).toBe(true);
+  });
+
+  it("offers Approve again once the revision request goes stale", () =>
+    expect(canReview(studioDraft({ revisionRequestedAt: "2026-10-24T09:49:00Z" }), "approve", now)).toBe(true));
+
+  it("keeps the other actions while revising, as the draft's state allows", () => {
+    expect(canReview(revising, "skip", now)).toBe(true);
+    expect(canReview(revising, "edit", now)).toBe(true);
+    expect(canReview(revising, "restore", now)).toBe(false);
+  });
+
+  it("follows the draft's state", () => {
+    expect(canReview(studioDraft({ status: "approved" }), "approve", now)).toBe(false);
+    expect(canReview(studioDraft({ status: "skipped" }), "restore", now)).toBe(true);
   });
 });
 

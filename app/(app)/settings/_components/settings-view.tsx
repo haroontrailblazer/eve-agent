@@ -140,7 +140,11 @@ function TimeZoneRow() {
   const { viewer } = useChatShell();
   const viewerId = viewer?.id ?? null;
   const [timezone, setTimezone] = useState<string | null>(null);
-  const [zones] = useState<readonly string[]>(() => Intl.supportedValuesOf("timeZone"));
+  // Node's and the browser's zone lists differ, so the list is built in the
+  // browser once the brand's zone loads. Until then the server and the first
+  // client render both show only "Loading...".
+  const [zones, setZones] = useState<readonly string[]>([]);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!viewerId) return;
@@ -152,7 +156,10 @@ function TimeZoneRow() {
         if (!response.ok) return;
 
         const body = (await response.json()) as { timezone?: string };
-        if (!cancelled && body.timezone) setTimezone(body.timezone);
+        if (!cancelled && body.timezone) {
+          setZones(Intl.supportedValuesOf("timeZone"));
+          setTimezone(body.timezone);
+        }
       })
       .catch(() => {});
 
@@ -161,9 +168,13 @@ function TimeZoneRow() {
     };
   }, [viewerId]);
 
+  // The select stays disabled while a save is out, so a second change can't
+  // be reverted to a zone that was never saved.
   async function change(next: string) {
+    if (saving) return;
     const previous = timezone;
     setTimezone(next);
+    setSaving(true);
 
     try {
       const result = await setBrandTimezoneAction({ timezone: next });
@@ -174,11 +185,13 @@ function TimeZoneRow() {
       }
 
       showRequestError(result.message ?? "That time zone is not valid.");
+      setTimezone(previous);
     } catch {
       showRequestError("Something went wrong.");
+      setTimezone(previous);
+    } finally {
+      setSaving(false);
     }
-
-    setTimezone(previous);
   }
 
   const options = timezone !== null && !zones.includes(timezone) ? [timezone, ...zones] : zones;
@@ -190,7 +203,7 @@ function TimeZoneRow() {
       </label>
       <select
         className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-small shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 sm:w-64 dark:bg-input/30"
-        disabled={timezone === null}
+        disabled={timezone === null || saving}
         id="brand-timezone"
         onChange={(event) => void change(event.target.value)}
         value={timezone ?? ""}

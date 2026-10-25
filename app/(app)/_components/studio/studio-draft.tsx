@@ -4,7 +4,7 @@ import { DraftCard } from "@/components/harpy/draft-card";
 import { showRequestError } from "@/components/harpy/show-request-error";
 import { canApply, toDisplayStatus } from "@/lib/drafts/state";
 import type { StudioDraft as StudioDraftRecord } from "@/lib/studio/types";
-import { draftMeta, draftWarnings, isRevising } from "@/lib/studio/view-model";
+import { canReview, draftMeta, draftWarnings, isRevising } from "@/lib/studio/view-model";
 import { DraftEditor } from "./draft-editor";
 import { STUDIO_ACTION_FAILED_MESSAGE } from "./use-studio-snapshot";
 
@@ -85,7 +85,8 @@ export function StudioDraft({
   readonly refresh: () => Promise<void>;
 }) {
   const editing = isEditing && canApply("edit", draft.status);
-  const allows = (action: Parameters<typeof canApply>[0]) => !editing && canApply(action, draft.status);
+  // Approve hides while harpy revises the draft (see canReview).
+  const allows = (action: Parameters<typeof canApply>[0]) => !editing && canReview(draft, action, now);
 
   return (
     <div className="scroll-m-4" id={draftElementId(draft.id)} onClickCapture={onSelect}>

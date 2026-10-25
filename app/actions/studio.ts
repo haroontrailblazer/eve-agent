@@ -4,7 +4,7 @@ import { z } from "zod";
 import { BrandAccessError, getBrandIdForUser } from "@/lib/brand-access";
 import { setBrandTimezone } from "@/lib/db/brands";
 import { DRAFT_STATES, PIECE_KINDS, SOCIAL_PLATFORM_KEYS } from "@/lib/drafts/types";
-import { editTextToPosts } from "@/lib/drafts/thread-text";
+import { editTextToPlatformPosts } from "@/lib/drafts/thread-text";
 import { IDEA_MAX_CHARS, createIdea, getDraft, markIdeaRequested } from "@/lib/drafts/store";
 import {
   approveDraft,
@@ -191,15 +191,14 @@ export async function saveDraftEditAction(input: {
   const parsed = editInput.safeParse(input);
   if (!parsed.success) return { ...invalid(parsed.error), draft: null };
 
-  const posts = editTextToPosts(parsed.data.text);
+  // The platform decides whether a --- line splits the edit into thread parts.
+  const current = await getDraft(ctx.brandId, parsed.data.draftId);
+  if (!current) return { ok: false, message: reviewFailureMessage("not_found"), draft: null };
+
+  const posts = editTextToPlatformPosts(current.platform, parsed.data.text);
 
   if (posts.length === 0) {
-    const current = await getDraft(ctx.brandId, parsed.data.draftId);
-    return {
-      ok: false,
-      message: "Write something first.",
-      draft: current ? await toStudioDraft(ctx.brandId, current) : null,
-    };
+    return { ok: false, message: "Write something first.", draft: await toStudioDraft(ctx.brandId, current) };
   }
 
   const result = await saveManualEdit({

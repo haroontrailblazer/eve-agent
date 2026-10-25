@@ -11,9 +11,8 @@ import { showRequestError } from "@/components/harpy/show-request-error";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { canApply } from "@/lib/drafts/state";
 import { keyToAction, moveSelection } from "@/lib/studio/keyboard";
-import { selectableDraftIds } from "@/lib/studio/view-model";
+import { canReview, selectableDraftIds } from "@/lib/studio/view-model";
 import { IdeaComposer } from "./idea-composer";
 import { IdeaItem } from "./idea-item";
 import { KeyboardHelpDialog } from "./keyboard-help-dialog";
@@ -97,10 +96,11 @@ export function StudioView() {
       return;
     }
 
-    // The keys follow the buttons: they act only where the draft's state
-    // shows that button, and not while its editor is open.
+    // The keys follow the buttons: they act only where the card shows that
+    // button (so A does nothing while harpy revises the draft), and not while
+    // its editor is open.
     const draft = snapshot.ideas.flatMap((idea) => idea.drafts).find((item) => item.id === selectedId);
-    if (!draft || editingIds.has(draft.id) || !canApply(action.type, draft.status)) return;
+    if (!draft || editingIds.has(draft.id) || !canReview(draft, action.type, new Date(snapshot.now))) return;
 
     if (action.type === "edit") {
       setEditing(draft.id, true);
