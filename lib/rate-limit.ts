@@ -1,4 +1,4 @@
-import { Redis } from "@upstash/redis";
+import { getRedis } from "@/lib/redis";
 
 type LimitOptions = {
   readonly key: string;
@@ -14,32 +14,6 @@ export class RateLimitError extends Error {
     super("Too many requests. Please wait a moment and try again.");
     this.retryAfter = retryAfter;
   }
-}
-
-let redis: Redis | null | undefined;
-
-function getRedisEnv() {
-  const url = process.env.UPSTASH_REDIS_REST_URL?.trim() || process.env.KV_REST_API_URL?.trim();
-  const token =
-    process.env.UPSTASH_REDIS_REST_TOKEN?.trim() || process.env.KV_REST_API_TOKEN?.trim();
-
-  return url && token ? { token, url } : null;
-}
-
-function getRedis() {
-  if (redis !== undefined) {
-    return redis;
-  }
-
-  const env = getRedisEnv();
-
-  if (!env) {
-    redis = null;
-    return redis;
-  }
-
-  redis = new Redis(env);
-  return redis;
 }
 
 export async function enforceRateLimit(options: LimitOptions) {
