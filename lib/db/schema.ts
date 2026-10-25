@@ -10,6 +10,16 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type { ClientSessionState, MessageStreamEvent } from "eve/client";
+import type {
+  ApprovedVia,
+  DraftState,
+  IdeaRequest,
+  IdeaSourceChannel,
+  IdeaSourceKind,
+  PieceKind,
+  RevisionKind,
+  SocialPlatform,
+} from "@/lib/drafts/types";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -249,6 +259,141 @@ export const mediaAsset = pgTable(
   (table) => [index("idx_media_asset_brand").on(table.brandId, table.createdAt)],
 );
 
+// Studio and drafting (Phase 2)
+const tstz = (name: string) => timestamp(name, { withTimezone: true });
+const brandIdColumn = () =>
+  text("brand_id")
+    .notNull()
+    .references(() => brand.id, { onDelete: "cascade" });
+
+export const idea = pgTable(
+  "idea",
+  {
+    id: text("id").primaryKey(),
+    brandId: brandIdColumn(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    text: text("text").notNull(),
+    sourceKind: text("source_kind").$type<IdeaSourceKind>().notNull(),
+    sourceChannel: text("source_channel").$type<IdeaSourceChannel>().notNull(),
+    sourceRef: text("source_ref"),
+    requested: jsonb("requested").$type<IdeaRequest>().notNull(),
+    draftRequestedAt: tstz("draft_requested_at"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_idea_brand_created").on(table.brandId, table.createdAt)],
+);
+
+export const draft = pgTable(
+  "draft",
+  {
+    id: text("id").primaryKey(),
+    ideaId: text("idea_id")
+      .notNull()
+      .references(() => idea.id, { onDelete: "cascade" }),
+    brandId: brandIdColumn(),
+    platform: text("platform").$type<SocialPlatform>().notNull(),
+    status: text("status").$type<DraftState>().notNull().default("pending_review"),
+    revision: integer("revision").notNull().default(1),
+    hook: text("hook").notNull().default(""),
+    text: text("text").notNull(),
+    threadParts: jsonb("thread_parts").$type<string[] | null>(),
+    mediaIds: jsonb("media_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    imagePrompt: text("image_prompt"),
+    scheduledAt: tstz("scheduled_at"),
+    approvedAt: tstz("approved_at"),
+    approvedVia: text("approved_via").$type<ApprovedVia>(),
+    publishedAt: tstz("published_at"),
+    externalPostId: text("external_post_id"),
+    externalUrl: text("external_url"),
+    error: text("error"),
+    notes: text("notes").notNull().default(""),
+    revisionRequestedAt: tstz("revision_requested_at"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_draft_idea_platform").on(table.ideaId, table.platform),
+    index("idx_draft_brand_status").on(table.brandId, table.status, table.scheduledAt),
+  ],
+);
+
+export const draftRevision = pgTable(
+  "draft_revision",
+  {
+    id: text("id").primaryKey(),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => draft.id, { onDelete: "cascade" }),
+    brandId: brandIdColumn(),
+    revision: integer("revision").notNull(),
+    kind: text("kind").$type<RevisionKind>().notNull(),
+    text: text("text").notNull(),
+    threadParts: jsonb("thread_parts").$type<string[] | null>(),
+    instruction: text("instruction"),
+    createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_draft_revision_draft_revision").on(table.draftId, table.revision)],
+);
+
+export const contentPiece = pgTable(
+  "content_piece",
+  {
+    id: text("id").primaryKey(),
+    ideaId: text("idea_id")
+      .notNull()
+      .references(() => idea.id, { onDelete: "cascade" }),
+    brandId: brandIdColumn(),
+    kind: text("kind").$type<PieceKind>().notNull(),
+    title: text("title").notNull(),
+    body: jsonb("body").notNull(),
+    mediaIds: jsonb("media_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_content_piece_idea_kind").on(table.ideaId, table.kind)],
+);
+
+export const voiceGuide = pgTable(
+  "voice_guide",
+  {
+    id: text("id").primaryKey(),
+    brandId: brandIdColumn(),
+    version: integer("version").notNull(),
+    body: text("body").notNull(),
+    source: text("source").$type<"default" | "manual" | "harpy" | "restore">().notNull(),
+    note: text("note").notNull().default(""),
+    createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_voice_guide_brand_version").on(table.brandId, table.version)],
+);
+
+export const voiceExample = pgTable(
+  "voice_example",
+  {
+    id: text("id").primaryKey(),
+    brandId: brandIdColumn(),
+    platform: text("platform").$type<SocialPlatform>(),
+    text: text("text").notNull(),
+    source: text("source").$type<"pasted" | "published">().notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_voice_example_brand_created").on(table.brandId, table.createdAt)],
+);
+
+export const voicePreference = pgTable(
+  "voice_preference",
+  {
+    id: text("id").primaryKey(),
+    brandId: brandIdColumn(),
+    text: text("text").notNull(),
+    source: text("source").$type<"owner" | "chat">().notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_voice_preference_brand").on(table.brandId, table.createdAt)],
+);
+
 export type Chat = typeof chat.$inferSelect;
 export type ChatEvent = typeof chatEvent.$inferSelect;
 export type User = typeof user.$inferSelect;
@@ -259,3 +404,10 @@ export type Brand = typeof brand.$inferSelect;
 export type BrandMember = typeof brandMember.$inferSelect;
 export type ChannelIdentity = typeof channelIdentity.$inferSelect;
 export type MediaAsset = typeof mediaAsset.$inferSelect;
+export type Idea = typeof idea.$inferSelect;
+export type Draft = typeof draft.$inferSelect;
+export type DraftRevision = typeof draftRevision.$inferSelect;
+export type ContentPiece = typeof contentPiece.$inferSelect;
+export type VoiceGuideRow = typeof voiceGuide.$inferSelect;
+export type VoiceExampleRow = typeof voiceExample.$inferSelect;
+export type VoicePreferenceRow = typeof voicePreference.$inferSelect;

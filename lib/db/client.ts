@@ -29,7 +29,7 @@ export const db = new Proxy({} as NeonHttpDatabase<typeof schema>, {
 });
 
 // Tables the app cannot run without. A missing one means migrations have not
-// been applied yet. It names every table the harpy-v2 migrations (0006 to 0009)
+// been applied yet. It names every table the harpy-v2 migrations (0006 to 0010)
 // create, so a new build deployed before migrating shows "Run database
 // migrations" until all of them are in, and old chats never meet new code.
 export const REQUIRED_TABLES = [
@@ -39,10 +39,17 @@ export const REQUIRED_TABLES = [
   "channel_identity",
   "chat",
   "chat_event",
+  "content_piece",
+  "draft",
+  "draft_revision",
+  "idea",
   "media_asset",
   "session",
   "user",
   "verification",
+  "voice_example",
+  "voice_guide",
+  "voice_preference",
 ] as const;
 
 // Tables are never dropped at runtime, so once the schema is ready it stays
