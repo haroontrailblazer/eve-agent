@@ -3,37 +3,57 @@ import { getRedis } from "@/lib/redis";
 
 export const RECALL_CACHE_TTL_SECONDS = 604_800;
 
+function isAbort(error: unknown, signal?: AbortSignal): boolean {
+  return signal?.aborted === true || (error as { name?: unknown } | null)?.name === "AbortError";
+}
+
 // eve may replay a recall handler with the same operation id and requires the
-// same result, so the first result is kept for a week. A cache failure never
-// breaks a turn: it falls back to computing.
+// same result, so the first outcome is kept for a week, including a failed
+// compute (stored as a null outcome). The cached value is wrapped so a cached
+// null differs from a miss. A Redis error never breaks a turn, and an abort is
+// rethrown so eve treats it as cancellation.
 export async function withRecallCache<T>(
   operationId: string,
   compute: () => Promise<T>,
   redis: Redis | null = getRedis(),
-): Promise<T> {
-  if (!redis) {
-    return compute();
-  }
-
+  signal?: AbortSignal,
+): Promise<T | null> {
   const key = `voice:recall:${operationId}`;
 
-  try {
-    const cached = await redis.get<T>(key);
-
-    if (cached !== null && cached !== undefined) {
-      return cached;
+  async function remember(value: T | null) {
+    if (!redis) return;
+    try {
+      await redis.set(key, { value }, { ex: RECALL_CACHE_TTL_SECONDS });
+    } catch (error) {
+      console.warn("voice recall cache write failed", error);
     }
-  } catch (error) {
-    console.warn("voice recall cache read failed", error);
   }
 
-  const value = await compute();
+  if (redis) {
+    try {
+      const cached = await redis.get<{ value: T | null }>(key);
+
+      if (cached && typeof cached === "object" && "value" in cached) {
+        return cached.value;
+      }
+    } catch (error) {
+      console.warn("voice recall cache read failed", error);
+    }
+  }
+
+  let value: T | null;
 
   try {
-    await redis.set(key, value, { ex: RECALL_CACHE_TTL_SECONDS });
+    value = await compute();
   } catch (error) {
-    console.warn("voice recall cache write failed", error);
+    if (isAbort(error, signal)) {
+      throw error;
+    }
+
+    console.warn("voice recall failed", error);
+    value = null;
   }
 
+  await remember(value);
   return value;
 }

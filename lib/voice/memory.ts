@@ -81,8 +81,9 @@ export function voiceMemoryProvider() {
           return null;
         }
 
-        try {
-          return await withRecallCache(ctx.operationId, async () => {
+        return withRecallCache(
+          ctx.operationId,
+          async () => {
             const [preferences, examples] = await Promise.all([
               listVoicePreferences(brandId, PREFERENCE_LIMIT),
               listVoiceExamples(brandId, EXAMPLE_LIMIT),
@@ -94,11 +95,10 @@ export function voiceMemoryProvider() {
             });
 
             return buildVoiceRecall({ preferences, exemplars });
-          });
-        } catch (error) {
-          console.warn("voice recall failed", error);
-          return null;
-        }
+          },
+          undefined,
+          ctx.abortSignal,
+        );
       },
     },
     async tools(ctx) {
