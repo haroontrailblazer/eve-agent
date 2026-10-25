@@ -8,6 +8,7 @@ vi.mock("@/lib/db/client", () => ({ db: { execute: mocks.execute } }));
 const {
   claimFailedNotification,
   claimTemplateFallback,
+  findNotificationByProviderMessageId,
   findWaMessage,
   getNotification,
   insertNotification,
@@ -125,6 +126,15 @@ describe("notification store", () => {
     mocks.execute.mockResolvedValueOnce({ rows: [rawRow()] }).mockResolvedValueOnce({ rows: [] });
     expect(await getNotification("n1")).toMatchObject({ id: "n1", dedupeKey: "drafts_ready:i1" });
     expect(await getNotification("nope")).toBeNull();
+  });
+
+  it("finds a notification by its provider message id, or null", async () => {
+    mocks.execute
+      .mockResolvedValueOnce({ rows: [rawRow({ provider_message_id: "wamid.tpl" })] })
+      .mockResolvedValueOnce({ rows: [] });
+    expect(await findNotificationByProviderMessageId("wamid.tpl")).toMatchObject({ id: "n1", providerMessageId: "wamid.tpl" });
+    expect(new PgDialect().sqlToQuery(mocks.execute.mock.calls[0][0]).params).toEqual(["wamid.tpl"]);
+    expect(await findNotificationByProviderMessageId("nope")).toBeNull();
   });
 
   it("normalizes a Date created_at to ISO", async () => {

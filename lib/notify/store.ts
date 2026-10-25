@@ -133,3 +133,10 @@ select "brand_id", "draft_id", "revision", "kind", "notification_id" from "wa_me
     notificationId: row.notification_id === null ? null : String(row.notification_id),
   };
 }
+
+// A template's wamid has no wa_message_map row; it lives on the notification.
+export async function findNotificationByProviderMessageId(wamid: string): Promise<NotificationRecord | null> {
+  const result = await db.execute(sql`select * from "notification" where "provider_message_id" = ${wamid} limit 1`);
+  const row = result.rows[0];
+  return row ? toNotification(row) : null;
+}
