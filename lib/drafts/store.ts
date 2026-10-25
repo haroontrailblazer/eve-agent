@@ -25,7 +25,7 @@ import type {
   SocialPlatform,
 } from "@/lib/drafts/types";
 
-export const IDEA_MAX_CHARS = 8_000;
+export { IDEA_MAX_CHARS } from "@/lib/drafts/limits";
 
 export function statusList(states: readonly DraftState[]) {
   return sql.join(

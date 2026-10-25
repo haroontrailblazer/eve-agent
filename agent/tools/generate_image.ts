@@ -1,14 +1,9 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
-import { generateOrEditImage, type SourceImage } from "@/lib/image-gen";
-import { errorMessage } from "@/lib/mcp-client";
+import type { SourceImage } from "@/lib/image-gen";
 import { resolveBrandContext } from "@/lib/mcp-context";
-import { saveMediaAsset } from "@/lib/media/assets";
-import { IMAGE_GENERATIONS_PER_DAY } from "@/lib/media/limits";
+import { generateBrandImage } from "@/lib/media/generate";
 import { loadSourceImage } from "@/lib/media/load-source-image";
-import { enforceRateLimit, RateLimitError } from "@/lib/rate-limit";
-
-const DAY_SECONDS = 86_400;
 
 export default defineTool({
   description:
@@ -35,25 +30,6 @@ export default defineTool({
     }
 
     const { brandId, userId } = brandContext;
-
-    try {
-      await enforceRateLimit({
-        key: brandId,
-        limit: IMAGE_GENERATIONS_PER_DAY,
-        prefix: "image:generate",
-        windowSeconds: DAY_SECONDS,
-      });
-    } catch (error) {
-      if (error instanceof RateLimitError) {
-        return {
-          ok: false,
-          message: `Image limit reached for today (${IMAGE_GENERATIONS_PER_DAY}). Try again tomorrow.`,
-        };
-      }
-
-      return { ok: false, message: `Couldn't check the image limit: ${errorMessage(error)}` };
-    }
-
     let sourceImage: SourceImage | undefined;
 
     if (input.sourceImageUrl) {
@@ -69,28 +45,10 @@ export default defineTool({
       sourceImage = loaded.image;
     }
 
-    let generated;
-    try {
-      generated = await generateOrEditImage({ prompt: input.prompt, sourceImage });
-    } catch (error) {
-      return {
-        ok: false,
-        message: `Image generation failed: ${errorMessage(error)}. Make sure the AI Gateway has Google Gemini image models enabled.`,
-      };
-    }
+    const saved = await generateBrandImage({ brandId, userId, prompt: input.prompt, sourceImage });
 
-    let saved: { readonly id: string; readonly url: string };
-    try {
-      saved = await saveMediaAsset({
-        brandId,
-        bytes: Buffer.from(generated.base64, "base64"),
-        mediaType: generated.mediaType,
-        prompt: input.prompt,
-        source: "generated",
-        userId,
-      });
-    } catch (error) {
-      return { ok: false, message: `Generated the image but couldn't save it: ${errorMessage(error)}` };
+    if (!saved.ok) {
+      return { ok: false, message: saved.message };
     }
 
     // Brackets would end the markdown alt text early.
