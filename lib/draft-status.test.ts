@@ -34,6 +34,8 @@ describe("DRAFT_STATUS_META", () => {
       scheduled: ["Scheduled", "--status-scheduled", "clock"],
       posted: ["Posted", "--status-posted", "check"],
       failed: ["Failed", "--status-failed", "alert"],
+      approved: ["Approved", "--status-scheduled", "dot"],
+      skipped: ["Skipped", "--status-draft", "slash"],
     });
   });
 

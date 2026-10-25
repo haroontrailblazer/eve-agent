@@ -8,6 +8,8 @@ export const STATUS_TEXT_CLASS: Readonly<Record<DraftStatus, string>> = {
   scheduled: "text-status-scheduled",
   posted: "text-status-posted",
   failed: "text-status-failed",
+  approved: "text-status-scheduled",
+  skipped: "text-status-draft",
 };
 
 // A 12px glyph drawn in currentColor, so the color comes from the status token.
@@ -36,6 +38,8 @@ export function StatusGlyph({
       {glyph === "clock" && <path d="M6 3.5V6l1.75 1" />}
       {glyph === "check" && <path d="m4 6.1 1.5 1.5L8 4.6" />}
       {glyph === "alert" && <path d="M6 3.6v2.9M6 8.4v.01" />}
+      {glyph === "dot" && <circle cx="6" cy="6" r="1.75" fill="currentColor" stroke="none" />}
+      {glyph === "slash" && <path d="M3.5 8.5l5-5" />}
     </svg>
   );
 }

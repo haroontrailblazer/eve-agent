@@ -25,9 +25,7 @@ export function stateAfter(action: ReviewAction): DraftState {
   return STATE_AFTER[action];
 }
 
-// "approved" and "skipped" join DraftStatus in a later task, which narrows
-// this return type back to DraftStatus.
-export function toDisplayStatus(state: DraftState): DraftStatus | "approved" | "skipped" {
+export function toDisplayStatus(state: DraftState): DraftStatus {
   switch (state) {
     case "pending_review":
       return "needs_review";
