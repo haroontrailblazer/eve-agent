@@ -20,8 +20,12 @@ export type WhatsAppSendResult =
 // Business-scoped user ids look like "US.1349..." or "US.ENT.1349...".
 const BSUID = /^[A-Z]{2}\.(?:ENT\.)?[A-Za-z0-9]{1,128}$/;
 
+export function isBsuid(value: string): boolean {
+  return BSUID.test(value);
+}
+
 export function recipientFields(waId: string): { readonly to: string } | { readonly recipient: string } {
-  return BSUID.test(waId) ? { recipient: waId } : { to: waId };
+  return isBsuid(waId) ? { recipient: waId } : { to: waId };
 }
 
 export function textMessage(waId: string, body: string): WhatsAppOutbound {
