@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { deleteSkillAction, listSkillsAction } from "@/app/actions/skills";
+import { setBrandTimezoneAction } from "@/app/actions/studio";
 import { useChatShell } from "@/app/_components/chat-shell-context";
 import { ConfirmActionButton } from "@/components/harpy/confirm-action-button";
+import { showRequestError } from "@/components/harpy/show-request-error";
 import { useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +28,9 @@ export function SettingsView() {
       </Section>
       <Section title="Appearance">
         <AppearanceToggle />
+      </Section>
+      <Section title="Time zone">
+        <TimeZoneRow />
       </Section>
       <Section title="Skills">
         <SkillsList />
@@ -128,6 +133,76 @@ function AppearanceToggle() {
         </ToggleGroupItem>
       ))}
     </ToggleGroup>
+  );
+}
+
+function TimeZoneRow() {
+  const { viewer } = useChatShell();
+  const viewerId = viewer?.id ?? null;
+  const [timezone, setTimezone] = useState<string | null>(null);
+  const [zones] = useState<readonly string[]>(() => Intl.supportedValuesOf("timeZone"));
+
+  useEffect(() => {
+    if (!viewerId) return;
+
+    let cancelled = false;
+
+    void fetch("/api/brand-voice", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return;
+
+        const body = (await response.json()) as { timezone?: string };
+        if (!cancelled && body.timezone) setTimezone(body.timezone);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerId]);
+
+  async function change(next: string) {
+    const previous = timezone;
+    setTimezone(next);
+
+    try {
+      const result = await setBrandTimezoneAction({ timezone: next });
+
+      if (result.ok) {
+        toast.success("Time zone saved");
+        return;
+      }
+
+      showRequestError(result.message ?? "That time zone is not valid.");
+    } catch {
+      showRequestError("Something went wrong.");
+    }
+
+    setTimezone(previous);
+  }
+
+  const options = timezone !== null && !zones.includes(timezone) ? [timezone, ...zones] : zones;
+
+  return (
+    <Card className="flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <label className="text-small font-medium text-foreground" htmlFor="brand-timezone">
+        Scheduled posts use this time zone
+      </label>
+      <select
+        className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-small shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 sm:w-64 dark:bg-input/30"
+        disabled={timezone === null}
+        id="brand-timezone"
+        onChange={(event) => void change(event.target.value)}
+        value={timezone ?? ""}
+      >
+        {timezone === null ? <option value="">Loading...</option> : null}
+        {options.map((zone) => (
+          <option key={zone} value={zone}>
+            {zone}
+          </option>
+        ))}
+      </select>
+    </Card>
   );
 }
 
