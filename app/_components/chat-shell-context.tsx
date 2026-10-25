@@ -24,6 +24,9 @@ type ChatShellContextValue = {
   readonly slackConfigured: boolean;
   readonly touchChat: (chat: ChatListItem) => void;
   readonly viewer: Viewer | null;
+  // The WHATSAPP_* settings are all present. The sidebar and the Channels page
+  // both read it from here.
+  readonly whatsappConfigured: boolean;
 };
 
 const ChatShellContext = createContext<ChatShellContextValue | null>(null);

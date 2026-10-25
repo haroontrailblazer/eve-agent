@@ -1,8 +1,11 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { BrandAccessError, getBrandIdForUser } from "@/lib/brand-access";
+import { sendToWhatsAppMessage } from "@/lib/channels/view";
 import { setBrandTimezone } from "@/lib/db/brands";
+import { findWhatsAppRecipient } from "@/lib/db/channel-identities";
 import { DRAFT_STATES, PIECE_KINDS, SOCIAL_PLATFORM_KEYS } from "@/lib/drafts/types";
 import { editTextToPlatformPosts } from "@/lib/drafts/thread-text";
 import { IDEA_MAX_CHARS, createIdea, getDraft, markIdeaRequested } from "@/lib/drafts/store";
@@ -19,6 +22,7 @@ import { getServerViewer } from "@/lib/session";
 import { isValidTimeZone } from "@/lib/time-zone";
 import { buildDraftIdeaRequest, buildRevisionRequest, extractLinks } from "@/lib/studio/requests";
 import { toStudioDraft } from "@/lib/studio/snapshot";
+import { notifyDraftsReady } from "@/lib/whatsapp/deliver";
 import type { StudioDraft } from "@/lib/studio/types";
 
 export type StudioActionResult =
@@ -251,4 +255,24 @@ export async function setBrandTimezoneAction(input: { timezone: string }): Promi
 
   await setBrandTimezone(ctx.brandId, parsed.data.timezone);
   return { ok: true };
+}
+
+// An owner's explicit send always goes out, so each press gets its own resend key.
+export async function sendIdeaToWhatsAppAction(input: { ideaId: string }): Promise<{ ok: boolean; message: string }> {
+  const ctx = await context();
+  if (!ctx.ok) return ctx;
+
+  const parsed = ideaIdInput.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error);
+
+  const waId = await findWhatsAppRecipient(ctx.brandId, ctx.viewer.id);
+  if (!waId) return { ok: false, message: "Link your phone on the Channels page first." };
+
+  const result = await notifyDraftsReady({
+    brandId: ctx.brandId,
+    waId,
+    ideaId: parsed.data.ideaId,
+    resendKey: randomUUID(),
+  });
+  return { ok: result.ok, message: sendToWhatsAppMessage(result) };
 }

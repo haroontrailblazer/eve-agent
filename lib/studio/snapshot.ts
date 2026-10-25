@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { getBrandSettings } from "@/lib/db/brands";
+import { findWhatsAppRecipient } from "@/lib/db/channel-identities";
 import { db } from "@/lib/db/client";
 import { contentPiece, draft, idea, mediaAsset } from "@/lib/db/schema";
 import {
@@ -10,6 +11,7 @@ import {
 } from "@/lib/drafts/records";
 import { SOCIAL_PLATFORM_KEYS } from "@/lib/drafts/types";
 import type { StudioDraft, StudioSnapshot } from "@/lib/studio/types";
+import { isWhatsAppConfigured } from "@/lib/whatsapp/config";
 
 export const STUDIO_IDEA_LIMIT = 30;
 export const UP_NEXT_LIMIT = 8;
@@ -39,9 +41,11 @@ function platformRank(platform: string): number {
   return (SOCIAL_PLATFORM_KEYS as readonly string[]).indexOf(platform);
 }
 
-export async function loadStudioSnapshot(brandId: string): Promise<StudioSnapshot> {
-  const [settings, ideaRows, upNextRows] = await Promise.all([
+// whatsappLinked is one lookup for the whole snapshot, not one per idea.
+export async function loadStudioSnapshot(brandId: string, viewerId: string): Promise<StudioSnapshot> {
+  const [settings, whatsappRecipient, ideaRows, upNextRows] = await Promise.all([
     getBrandSettings(brandId),
+    isWhatsAppConfigured() ? findWhatsAppRecipient(brandId, viewerId) : Promise.resolve(null),
     db
       .select()
       .from(idea)
@@ -87,6 +91,7 @@ export async function loadStudioSnapshot(brandId: string): Promise<StudioSnapsho
   return {
     timezone: settings?.timezone ?? "UTC",
     now: new Date().toISOString(),
+    whatsappLinked: whatsappRecipient !== null,
     ideas: ideaRows.map((row) => {
       const record = toIdeaRecord(row);
       return {

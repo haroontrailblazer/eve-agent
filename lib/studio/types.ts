@@ -11,4 +11,6 @@ export type StudioSnapshot = {
   readonly now: string;
   readonly ideas: readonly StudioIdea[];
   readonly upNext: readonly StudioDraft[];
+  // WhatsApp is configured and the viewer has a linked number.
+  readonly whatsappLinked: boolean;
 };

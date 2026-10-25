@@ -48,5 +48,5 @@ export function studioIdea(
 }
 
 export function snapshot(overrides: Partial<StudioSnapshot> = {}): StudioSnapshot {
-  return { timezone: "UTC", now: "2026-10-24T10:00:00.000Z", ideas: [], upNext: [], ...overrides };
+  return { timezone: "UTC", now: "2026-10-24T10:00:00.000Z", ideas: [], upNext: [], whatsappLinked: false, ...overrides };
 }

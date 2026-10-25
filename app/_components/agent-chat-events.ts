@@ -9,4 +9,6 @@ export type ChatBootstrapSyncDetail = {
   // SLACK_CONNECTOR is set, so the Slack channel is wired up.
   readonly slackConfigured: boolean;
   readonly viewer: Viewer | null;
+  // The WHATSAPP_* settings are all present, so the WhatsApp channel is wired up.
+  readonly whatsappConfigured: boolean;
 };
