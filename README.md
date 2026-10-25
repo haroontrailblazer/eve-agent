@@ -26,6 +26,13 @@ Phase 1 shipped to production with migrations 0006 to 0009 applied. The owner ch
 
 Not in stage 2: nothing publishes (Approve marks a draft approved and it waits in Studio), WhatsApp review cards come in stage 3, and learning from edits comes in stage 5. Migration 0010 only adds tables. See the [stage 2 notes and owner checklist](docs/setup-and-deploy.md#stage-2-studio-and-drafting).
 
+## Stage 3 status: WhatsApp
+
+- **WhatsApp.** Message harpy with text, voice notes and photos. Drafts come back as review cards with Approve, Edit and Skip buttons, and an idea in Studio can be sent to WhatsApp. Outside the 24-hour window harpy sends a message template instead. Setup is in the [WhatsApp setup runbook](docs/whatsapp-setup.md).
+- **Slack identity.** A linked Slack user acts as the owner, and drafts show as "via Slack".
+
+Migration 0011 only adds tables. See the [stage 3 notes and owner checklist](docs/setup-and-deploy.md#stage-3-whatsapp-and-slack).
+
 ## Setup
 
 Requirements: Node.js 24 or newer, pnpm 10.12.4 (through Corepack), a Vercel account.
@@ -73,6 +80,7 @@ Without Docker, `pnpm eve:build` uses the `just-bash` sandbox provider, which is
 
 - [How the chatbot works](docs/how-the-chatbot-works.md): chat hook, persistence, legacy chats, allowlist, media, secrets, shell.
 - [Setup and deployment](docs/setup-and-deploy.md): env vars, migrations, Blob, Hobby notes, owner checklist.
+- [WhatsApp setup](docs/whatsapp-setup.md): the Meta runbook and the seven message templates.
 
 ## Agent code
 

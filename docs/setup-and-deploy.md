@@ -33,6 +33,11 @@ The commands below use `vercel`. If you do not have a global install, replace `v
 | `AI_GATEWAY_API_KEY` | local only | Model access in local development. Alternatively use `VERCEL_OIDC_TOKEN` from `vercel env pull`. |
 | `BETTER_AUTH_URL` | no | Override the app origin for a custom domain. |
 | `SLACK_CONNECTOR`, `LINEAR_CONNECTOR`, `NOTION_CONNECTOR`, `SENTRY_CONNECTOR` | no | Vercel Connect connector UIDs. |
+| `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN` | for WhatsApp | Meta Cloud API settings. All four must be set or WhatsApp stays off. |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | for WhatsApp | The WhatsApp Business Account ID, kept for managing templates. |
+| `HARPY_WHATSAPP_ALLOWED_NUMBERS` | for WhatsApp | Your number(s), digits only, comma-separated. These link on first contact. |
+| `HARPY_WHATSAPP_NUMBER` | for WhatsApp | The number people message, digits only. Builds the wa.me link on Channels. |
+| `REDIS_URL` | for WhatsApp | A `rediss://` TCP URL for the Chat SDK state. Without it the state is kept in memory. |
 
 `.env.example` lists the harpy variables with a one-line comment each.
 
@@ -394,6 +399,36 @@ HARPY_EVAL_AS_OWNER=1 pnpm evals
    - add the preference "never use hashtags", and the next drafts carry no hashtags.
 9. In Settings, set the time zone. Suggested times in Studio show in that zone.
 10. Run `HARPY_EVAL_AS_OWNER=1 pnpm evals` locally, against a non-production database as described above. Every lint gate passes, and the judge averages 0.7 or above.
+
+## Stage 3: WhatsApp and Slack
+
+Stage 3 adds WhatsApp as a second way to talk to harpy: text, voice notes and photos in, drafts back as review cards with Approve, Edit and Skip buttons. It also lets a linked Slack user act as the owner. Nothing publishes; Approve still marks a draft approved and it waits in Studio under Up next. Follow the [WhatsApp setup runbook](whatsapp-setup.md) for the Meta side.
+
+### Deploy notes
+
+- New env vars: `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `HARPY_WHATSAPP_ALLOWED_NUMBERS` and `HARPY_WHATSAPP_NUMBER`. See the table at the top of this guide and the runbook. WhatsApp turns on only when the first four of those are set.
+- Migration `0011_whatsapp` only adds two tables. Nothing existing is altered, so the owner can run it before merging with `! pnpm db:migrate:production` (the `!` runs it from the Claude Code prompt; in a terminal, type `pnpm db:migrate:production`). Ask before any deploy or merge.
+- `REDIS_URL` must be a `rediss://` TCP URL. The Upstash REST variables are not enough for the Chat SDK state.
+- The webhook is `https://eve-harpy.vercel.app/eve/v1/whatsapp`. Preview deployments can't receive it, and a tunnel is for a separate Meta test app only.
+- WhatsApp adds no schedule, so it fits Vercel Hobby. Webhook handlers only transcribe and send; drafting runs in the eve session.
+- Messages from phones that aren't linked get no reply, no transcription and no turn. The one exception is a correct `LINK <code>`.
+
+### Stage 3 owner checklist
+
+Tick an item only when you observe it.
+
+1. With your number in `HARPY_WHATSAPP_ALLOWED_NUMBERS`, send harpy "hi". It answers.
+2. Send a voice note: "a post about why small teams ship faster". You get one short line, then a review card per platform, with an image where one was made and a footer like "LinkedIn · 612 chars".
+3. Tap Approve on one card. You get "Approved the ... draft", and Studio shows it under Up next.
+4. Tap Edit on another card, then answer with a voice note: "make it shorter". A new card comes back.
+5. Tap Skip on the third card. You get "Skipped the ... draft".
+6. Tap Approve on the old card from step 4. You get "That draft changed. Showing the latest." and the current card.
+7. From a phone that isn't linked, send harpy a message. Nothing comes back.
+8. Send a photo with the caption "post this with a line about our offsite". The drafts use your photo.
+9. Don't message harpy for 24 hours, then use "Send to WhatsApp" on an idea in Studio. The `harpy_drafts_ready` template arrives, and tapping Review sends the cards. As a faster check, delete the key `wa:window:<your number>` in the Upstash data browser.
+10. On the Channels page, choose Link Slack, then DM harpy in Slack `LINK <code>`. Then ask in Slack "draft a LinkedIn post about our hiring mistakes". It appears in Studio as "via Slack", and your Brand voice preferences apply.
+11. Send `/new`. You get "Started a new conversation." If nothing comes back, `/new` doesn't work on this eve version. Tell the builder, who removes the command. (It relies on a route wrapper that has not been run against a live eve session yet.)
+12. After the deploy, open the Channels page and look at the Messaging section (WhatsApp and Slack cards), then open Studio and look at the "Send to WhatsApp" button on an idea. Neither has been seen rendering yet, because the dev server can't run locally. Tell the builder if either looks wrong.
 
 ## Troubleshooting
 

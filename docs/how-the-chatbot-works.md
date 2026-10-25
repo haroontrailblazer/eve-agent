@@ -206,8 +206,56 @@ Studio keyboard shortcuts (`lib/studio/keyboard.ts`): J and K move, A approves, 
 
 `evals/drafting/ideas.eval.ts` sends each idea in `evals/data/ideas.yaml` through the real agent and checks the platforms drafted, the lint gates and a judge score. `lib/eval-auth.ts` lets a local caller act as the owner when `HARPY_EVAL_AS_OWNER=1`, and does nothing when `NODE_ENV` is `production`. See [Running the evals](setup-and-deploy.md#running-the-evals).
 
+## WhatsApp
+
+WhatsApp is a second front door to the same agent. The channel is `agent/channels/whatsapp.ts`, served at `/eve/v1/whatsapp` through the Chat SDK adapter. That file only wires things up; the decisions live in `lib/whatsapp`. Setup is in the [WhatsApp setup runbook](whatsapp-setup.md).
+
+### Inbound order
+
+`planInbound` (`lib/whatsapp/inbound.ts`) decides what each message does, in this order:
+
+1. **Link command.** `LINK <code>` redeems a code made on the Channels page. A stranger gets an answer only to a correct code. A wrong code gets a reply only if the sender is already linked.
+2. **Unknown sender.** No linked identity means silence: no reply, no transcription, no typing indicator and no turn. A number in `HARPY_WHATSAPP_ALLOWED_NUMBERS` links itself to the owner on first contact (`lib/channel-auth.ts`).
+3. **Rate limit.** 30 messages per 10 minutes per sender. The 31st gets one notice and later ones are ignored.
+4. **Window.** The message reopens the 24-hour window (`wa:window:<number>`).
+5. **Reset.** `/new` starts a fresh conversation. It goes through a route wrapper to eve's session reset, and the wrapper has not been run against a live session yet.
+6. **Attachments.** Locations and stickers are dropped.
+7. **Voice.** A voice note is transcribed with `openai/whisper-1` and the transcript becomes the message text. The agent is told it came from a voice note. If transcription fails, the sender is asked to type it.
+8. **Edit target.** If an edit marker is waiting, or the message replies to one of harpy's cards, the draft is marked as having a revision request and the turn is told to call `revise_draft` and then `submit_for_review` for that draft only.
+9. **Turn.** Everything else starts an eve turn as the owner principal, with the sender's number in `auth.attributes`.
+
+Each reply is posted once, complete, because WhatsApp can't edit sent messages.
+
+### Cards, buttons and the edit marker
+
+Review cards bypass the Chat SDK. `lib/whatsapp/cards.ts` builds the Cloud API interactive messages and `lib/whatsapp/cloud-api.ts` sends them directly, so harpy gets the message id of every card, can put the draft's image in the header and controls the button ids. A card shows the draft text (an excerpt, with the full text sent just above it, when it is over 1,024 characters), the image when there is one, a footer such as "LinkedIn · 612 chars", and three buttons: Approve, Edit and Skip.
+
+Button ids are `harpy:<verb>:<draftId>:<revision>`. The revision is how a stale tap is caught. Approve and Skip run the same guarded statements as Studio (`lib/review.ts`) with no model turn, and a tap on a card for an old revision gets "That draft changed. Showing the latest." and the current card. Each tap runs once (`wa:tap:<id>`, 24 hours), since WhatsApp redelivers and people double tap.
+
+Edit does not wake the model. It stores an edit marker (`wa:edit:<number>`, 30 minutes, used once) and asks what to change. The next message, text or voice note, becomes the instruction. Replying to a card with text works as well.
+
+### The outbox and the template fallback
+
+Review delivery goes through the `notification` table (`lib/whatsapp/deliver.ts`), so a send is recorded and the same drafts aren't sent twice. If the 24-hour window is open, harpy sends the cards. If it is closed, or Meta rejects a card with error 131047, harpy sends the `harpy_drafts_ready` template instead, and its Review button sends the cards when tapped. Without Redis the window counts as closed, so templates are used. Each card sent is recorded in `wa_message_map`, which is how a reply to a card finds its draft and how a failed card finds its notification.
+
+### The statuses wrapper
+
+Delivery statuses (sent, delivered, read, failed) arrive on the same webhook, but the adapter ignores them. `lib/whatsapp/route.ts` wraps the channel's routes. For each POST it checks the same `X-Hub-Signature-256` HMAC the adapter checks, and only then reads statuses (`lib/whatsapp/statuses.ts`). A failed card with error 131047 triggers the template fallback once. Unsigned or wrongly signed bodies are passed to the adapter untouched, and the adapter answers 401.
+
+### What is stored and where
+
+- **Chat SDK history.** The Chat SDK keeps WhatsApp message history in Redis, bounded to 10 messages per sender for 1 hour. The typing indicator needs the latest inbound message. Text from a stranger therefore sits in Redis for up to an hour and then expires.
+- **Sender mapping.** The WhatsApp adapter also keeps a small sender-id-to-route mapping in Redis for every sender, with no message text.
+- **harpy's own keys.** `wa:window`, `wa:edit`, `wa:tap`, `wa:inbound` and the link code keys, all with short expiry.
+- **Postgres.** Linked identities in `channel_identity`, plus `notification` and `wa_message_map` from migration `0011`.
+
+### Slack identity
+
+Slack runs on the same principal. A user makes a code with Link Slack on the Channels page and sends `LINK <code>` to harpy in a Slack DM (`lib/slack-auth.ts`). From then on that Slack user acts as the owner: drafts show as "via Slack" in Studio and Brand voice preferences apply. Approval prompts resumed in Slack keep the linked principal. Someone who isn't linked gets a hint to link in DMs and mentions, and silence elsewhere.
+
 ## Invariants
 
+- harpy never replies to, transcribes for or starts a turn for a WhatsApp sender with no linked identity.
 - A chat row is not an eve session. The row owns the URL, title, owner, pending message and stored session. eve owns the remote durable session.
 - `chat_event.event_index` orders local rows. It is not a stream cursor.
 - Dedupe events by `meta.id`. Never rely on `JSON.stringify` key order.
