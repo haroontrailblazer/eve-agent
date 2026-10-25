@@ -246,9 +246,16 @@ describe("notifyDraftsReady", () => {
 describe("sendReviewCards", () => {
   const cards = (drafts: DraftRecord[]) =>
     sendReviewCards({ brandId: "b1", waId: "1555", drafts, notificationId: null });
+  const asset = (overrides: Record<string, string> = {}) => ({
+    id: "m1",
+    brandId: "b1",
+    blobUrl: "https://blob/x.png",
+    mediaType: "image/png",
+    ...overrides,
+  });
 
   it("adds an image header from the draft's own brand", async () => {
-    mocks.getMediaAsset.mockResolvedValue({ id: "m1", brandId: "b1", blobUrl: "https://blob/x.png" });
+    mocks.getMediaAsset.mockResolvedValue(asset());
     await cards([draft("d1", "pending_review", ["m1"])]);
     expect(mocks.sendWhatsApp.mock.calls[0][0].interactive.header).toEqual({
       type: "image",
@@ -256,8 +263,25 @@ describe("sendReviewCards", () => {
     });
   });
 
+  it("uses a jpeg as the image header", async () => {
+    mocks.getMediaAsset.mockResolvedValue(asset({ blobUrl: "https://blob/x.jpg", mediaType: "image/jpeg" }));
+    await cards([draft("d1", "pending_review", ["m1"])]);
+    expect(mocks.sendWhatsApp.mock.calls[0][0].interactive.header).toEqual({
+      type: "image",
+      image: { link: "https://blob/x.jpg" },
+    });
+  });
+
+  // WhatsApp image headers take only JPEG and PNG.
+  it.each(["image/webp", "image/gif"])("sends the card with no header for %s media", async (mediaType) => {
+    mocks.getMediaAsset.mockResolvedValue(asset({ mediaType }));
+    const outcome = await cards([draft("d1", "pending_review", ["m1"])]);
+    expect(mocks.sendWhatsApp.mock.calls[0][0].interactive.header).toBeUndefined();
+    expect(outcome).toEqual({ sent: 1, windowClosed: false, error: null, lastWamid: "wamid.1" });
+  });
+
   it("ignores media that belongs to another brand", async () => {
-    mocks.getMediaAsset.mockResolvedValue({ id: "m1", brandId: "other", blobUrl: "https://blob/x.png" });
+    mocks.getMediaAsset.mockResolvedValue(asset({ brandId: "other" }));
     await cards([draft("d1", "pending_review", ["m1"])]);
     expect(mocks.sendWhatsApp.mock.calls[0][0].interactive.header).toBeUndefined();
   });

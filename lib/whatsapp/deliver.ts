@@ -24,6 +24,8 @@ import { isWindowOpen } from "@/lib/whatsapp/window";
 
 const SEND_FAILED_MESSAGE = "Couldn't reach WhatsApp. Try again in a minute.";
 const IDEA_PARAM_MAX = 60;
+// WhatsApp image headers take only these; other images go without a header.
+const HEADER_IMAGE_TYPES: ReadonlySet<string> = new Set(["image/jpeg", "image/png"]);
 
 export type CardSendOutcome = {
   readonly sent: number;
@@ -48,7 +50,8 @@ export async function sendReviewCards(input: {
   for (const draft of drafts) {
     const firstMediaId = draft.mediaIds[0];
     const asset = firstMediaId ? await getMediaAsset(firstMediaId) : null;
-    const imageUrl = asset && asset.brandId === brandId ? asset.blobUrl : null;
+    const imageUrl =
+      asset && asset.brandId === brandId && HEADER_IMAGE_TYPES.has(asset.mediaType) ? asset.blobUrl : null;
 
     for (const { kind, message } of reviewCardMessages({ waId, draft, imageUrl, timezone })) {
       const result = await sendWhatsApp(message);
