@@ -8,6 +8,23 @@ export type LinkedRow = {
   readonly linkedOn: string;
 };
 
+// The unlink confirmation on the Channels page. A number in
+// HARPY_WHATSAPP_ALLOWED_NUMBERS links itself again, so WhatsApp says so.
+export const UNLINK_CONFIRM: Readonly<
+  Record<ChannelIdentityKind, { readonly title: string; readonly body: string; readonly confirm: string }>
+> = {
+  whatsapp: {
+    title: "Unlink this number?",
+    body: "harpy will stop answering this number. A number in HARPY_WHATSAPP_ALLOWED_NUMBERS links itself again on its next message, so remove it there too.",
+    confirm: "Unlink",
+  },
+  slack: {
+    title: "Unlink this Slack account?",
+    body: "harpy will stop answering this Slack account until you link it again.",
+    confirm: "Unlink",
+  },
+};
+
 const LINKED_ON = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
 function label(identity: LinkedIdentity): string {

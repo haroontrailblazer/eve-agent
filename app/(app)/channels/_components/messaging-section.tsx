@@ -13,7 +13,7 @@ import { showRequestError } from "@/components/harpy/show-request-error";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { LinkedRow } from "@/lib/channels/view";
+import { type LinkedRow, UNLINK_CONFIRM } from "@/lib/channels/view";
 import type { ChannelIdentityKind } from "@/lib/db/channel-identities";
 
 type Listing =
@@ -171,9 +171,9 @@ function ChannelCard({
                 <p className="text-meta text-muted-foreground">Linked {row.linkedOn}</p>
               </div>
               <ConfirmActionButton
-                confirmBody="harpy will stop answering this number until you link it again."
-                confirmLabel="Unlink"
-                confirmTitle="Unlink this number?"
+                confirmBody={UNLINK_CONFIRM[channel].body}
+                confirmLabel={UNLINK_CONFIRM[channel].confirm}
+                confirmTitle={UNLINK_CONFIRM[channel].title}
                 label="Unlink"
                 onConfirm={async () => {
                   const result = await unlinkChannelAction({ id: row.id });

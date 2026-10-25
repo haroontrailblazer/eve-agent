@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LinkedIdentity } from "@/lib/db/channel-identities";
-import { linkedRow, sendToWhatsAppMessage } from "@/lib/channels/view";
+import { linkedRow, sendToWhatsAppMessage, UNLINK_CONFIRM } from "@/lib/channels/view";
 
 function identity(overrides: Partial<LinkedIdentity>): LinkedIdentity {
   return {
@@ -56,5 +56,23 @@ describe("sendToWhatsAppMessage", () => {
       "WhatsApp isn't set up yet.",
     );
     expect(sendToWhatsAppMessage({ ok: false, reason: "send_failed", message: "Meta said no." })).toBe("Meta said no.");
+  });
+});
+
+describe("UNLINK_CONFIRM", () => {
+  it("warns that an allowed number links itself again", () => {
+    expect(UNLINK_CONFIRM.whatsapp).toEqual({
+      title: "Unlink this number?",
+      body: "harpy will stop answering this number. A number in HARPY_WHATSAPP_ALLOWED_NUMBERS links itself again on its next message, so remove it there too.",
+      confirm: "Unlink",
+    });
+  });
+
+  it("speaks of a Slack account on Slack rows", () => {
+    expect(UNLINK_CONFIRM.slack).toEqual({
+      title: "Unlink this Slack account?",
+      body: "harpy will stop answering this Slack account until you link it again.",
+      confirm: "Unlink",
+    });
   });
 });
