@@ -1,11 +1,13 @@
 import type { WorkflowStepToolContext } from "eve/tools";
-import { getBrandSettings } from "@/lib/db/brands";
+import { exemplarsFor, loadBriefContext } from "@/lib/drafts/brief-context";
 import { ideaSourceChannel, resolveTargets, type DraftPostsInput } from "@/lib/drafts/input";
-import { DRAFT_RUNS_PER_HOUR } from "@/lib/drafts/limits";
-import type { DraftingDeps, DraftingPlan, SavePieceResult } from "@/lib/drafts/orchestrate";
+import { DRAFT_RUNS_PER_HOUR, REVISIONS_PER_HOUR } from "@/lib/drafts/limits";
+import { containsLink } from "@/lib/drafts/lint";
+import type { DraftingDeps, DraftingPlan, RevisionPlan, SavePieceResult } from "@/lib/drafts/orchestrate";
 import type { ContentPieceRecord, DraftRecord, IdeaRecord } from "@/lib/drafts/records";
 import {
   createIdea,
+  getDraft,
   getIdea,
   IdeaNotFoundError,
   listDraftsForIdea,
@@ -16,15 +18,14 @@ import {
   setPieceMedia,
   type SaveGeneratedDraftInput,
 } from "@/lib/drafts/store";
+import { canApply } from "@/lib/drafts/state";
 import type { DraftTarget } from "@/lib/drafts/types";
 import type { DraftSource } from "@/lib/drafts/writer";
 import { errorMessage } from "@/lib/mcp-client";
 import { resolveBrandContext } from "@/lib/mcp-context";
 import { generateBrandImage } from "@/lib/media/generate";
+import { clearRevisionRequest, completeRevision, type ReviewResult } from "@/lib/review";
 import { enforceRateLimit, RateLimitError } from "@/lib/rate-limit";
-import { isValidTimeZone } from "@/lib/time-zone";
-import { selectExemplars } from "@/lib/voice/exemplars";
-import { getActiveVoiceGuide, listVoiceExamples, listVoicePreferences, type VoiceExample } from "@/lib/voice/store";
 
 // The I/O half of drafting. Every export is a "use step" function the
 // draft_posts workflow body awaits, so clocks, the database, Redis and the
@@ -35,9 +36,6 @@ import { getActiveVoiceGuide, listVoiceExamples, listVoicePreferences, type Voic
 // would pull node:crypto into the bundle and fail the build.
 
 const HOUR_SECONDS = 3_600;
-const EXEMPLARS_PER_TARGET = 4;
-const PREFERENCES_LIMIT = 30;
-const EXAMPLES_LIMIT = 100;
 
 type Failure = { readonly ok: false; readonly message: string };
 
@@ -45,14 +43,6 @@ function authAttributes(ctx: WorkflowStepToolContext): Record<string, unknown> |
   const auth = (ctx as { session?: { auth?: { current?: unknown; initiator?: unknown } } }).session?.auth;
   const current = (auth?.current ?? auth?.initiator) as { attributes?: Record<string, unknown> } | undefined;
   return current?.attributes;
-}
-
-function exemplarsFor(examples: readonly VoiceExample[], target: DraftTarget, ideaText: string) {
-  return selectExemplars(examples, {
-    text: ideaText,
-    platform: target.kind === "post" ? target.platform : null,
-    limit: EXEMPLARS_PER_TARGET,
-  }).map((example) => ({ platform: example.platform, text: example.text }));
 }
 
 function existingFor(
@@ -103,16 +93,11 @@ export async function prepareDrafting(
     if (!saved) return { ok: false, message: "That idea is gone." };
   }
 
-  const [settings, guide, preferences, examples, drafts, pieces] = await Promise.all([
-    getBrandSettings(brandId),
-    getActiveVoiceGuide(brandId),
-    listVoicePreferences(brandId, PREFERENCES_LIMIT),
-    listVoiceExamples(brandId, EXAMPLES_LIMIT),
+  const [context, drafts, pieces] = await Promise.all([
+    loadBriefContext(brandId),
     saved ? listDraftsForIdea(brandId, saved.id) : [],
     saved ? listPiecesForIdea(brandId, saved.id) : [],
   ]);
-  // buildWriterMessage formats "now" in this zone and throws on a bad one.
-  const zone = settings?.timezone ?? "UTC";
   const targets = resolveTargets(input, saved?.requested ?? null);
 
   // The idea is written last: a failed read retries this whole step, and must
@@ -139,17 +124,17 @@ export async function prepareDrafting(
     userId,
     plan: {
       ideaId: idea.id,
-      now: new Date().toISOString(),
-      timezone: isValidTimeZone(zone) ? zone : "UTC",
-      voiceGuide: guide.body,
-      preferences: preferences.map((preference) => preference.text),
+      now: context.now,
+      timezone: context.timezone,
+      voiceGuide: context.voiceGuide,
+      preferences: context.preferences,
       idea: idea.text,
       sources,
       allowLinksOnX: input.allowLinksOnX ?? false,
       redraft: input.redraft ?? false,
       targets: targets.map((target) => ({
         target,
-        exemplars: exemplarsFor(examples, target, idea.text),
+        exemplars: exemplarsFor(context.examples, target, idea.text),
         existing: existingFor(target, drafts, pieces),
       })),
     },
@@ -206,4 +191,71 @@ export async function attachPieceImageStep(input: {
   "use step";
   // False when the piece is gone.
   return setPieceMedia({ brandId: input.brandId, pieceId: input.pieceId, mediaIds: [input.mediaId] });
+}
+
+export async function prepareRevision(
+  ctx: WorkflowStepToolContext,
+  input: { readonly draftId: string; readonly instruction: string; readonly regenerateImage?: boolean },
+): Promise<{ readonly ok: true; readonly plan: RevisionPlan; readonly brandId: string; readonly userId: string } | Failure> {
+  "use step";
+
+  const brandContext = await resolveBrandContext(ctx);
+  if (!brandContext) return { ok: false, message: "You need to be signed in to revise drafts." };
+  const { brandId, userId } = brandContext;
+
+  try {
+    await enforceRateLimit({ key: brandId, limit: REVISIONS_PER_HOUR, prefix: "draft:revise", windowSeconds: HOUR_SECONDS });
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      return { ok: false, message: `Revision limit reached (${REVISIONS_PER_HOUR} an hour). Try again later.` };
+    }
+    return { ok: false, message: `Couldn't check the revision limit: ${errorMessage(error)}` };
+  }
+
+  const draft = await getDraft(brandId, input.draftId);
+  if (!draft) return { ok: false, message: "That draft is gone." };
+  if (!canApply("edit", draft.status)) return { ok: false, message: "That draft can't be changed now." };
+
+  // A revision has no stored sources. If the idea is gone, the draft's own
+  // text stands in for it.
+  const idea = await getIdea(brandId, draft.ideaId);
+  const ideaText = idea?.text ?? draft.text;
+  const target: DraftTarget = { kind: "post", platform: draft.platform };
+  const context = await loadBriefContext(brandId);
+
+  return {
+    ok: true,
+    brandId,
+    userId,
+    plan: {
+      draftId: draft.id,
+      revision: draft.revision,
+      brief: {
+        target,
+        now: context.now,
+        timezone: context.timezone,
+        voiceGuide: context.voiceGuide,
+        preferences: context.preferences,
+        exemplars: exemplarsFor(context.examples, target, ideaText),
+        idea: ideaText,
+        sources: [],
+        // A link the owner already accepted on X is not repaired away.
+        allowLinksOnX: draft.platform === "x" && containsLink(draft.text),
+      },
+      currentPosts: draft.posts,
+      instruction: input.instruction,
+      regenerateImage: input.regenerateImage ?? false,
+      existingImagePrompt: draft.imagePrompt,
+    },
+  };
+}
+
+export async function completeRevisionStep(input: Parameters<typeof completeRevision>[0]): Promise<ReviewResult> {
+  "use step";
+  return completeRevision(input);
+}
+
+export async function abandonRevisionStep(input: { readonly brandId: string; readonly draftId: string }): Promise<void> {
+  "use step";
+  await clearRevisionRequest(input.brandId, input.draftId);
 }

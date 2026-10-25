@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   runDrafting,
+  runRevision,
   writerConversation,
   writeTarget,
   type DraftingDeps,
   type DraftingPlan,
+  type RevisionDeps,
+  type RevisionPlan,
   type WriterReply,
 } from "@/lib/drafts/orchestrate";
 import type { ContentPieceRecord, DraftRecord } from "@/lib/drafts/records";
@@ -500,5 +503,125 @@ describe("writerConversation", () => {
       ok: false,
       message: "The writer stopped before finishing.",
     });
+  });
+});
+
+describe("runRevision", () => {
+  const revisionPlan = (overrides: Partial<RevisionPlan> = {}): RevisionPlan => ({
+    draftId: "draft-1",
+    revision: 2,
+    brief: {
+      target: { kind: "post", platform: "x" },
+      now: "2026-10-24T10:00:00Z",
+      timezone: "UTC",
+      voiceGuide: "Write plainly.",
+      preferences: [],
+      exemplars: [],
+      idea: "Small teams ship faster",
+      sources: [],
+      allowLinksOnX: false,
+    },
+    currentPosts: ["Old post"],
+    instruction: "Make it shorter",
+    regenerateImage: false,
+    existingImagePrompt: "old prompt",
+    ...overrides,
+  });
+
+  function revisionDeps(options: {
+    readonly replies?: WriterReply[];
+    readonly completeReason?: "stale" | "not_found" | "invalid_state";
+    readonly attachResult?: boolean;
+  }) {
+    const replies = options.replies ?? [post("x", ["  Shorter post  "], { imagePrompt: "new prompt" })];
+    const complete = vi.fn(async (input: { hook: string; posts: readonly string[]; imagePrompt: string | null }) => {
+      if (options.completeReason) return { ok: false as const, reason: options.completeReason, draft: null };
+      return {
+        ok: true as const,
+        draft: draftRecord(
+          { ideaId: "idea-1", platform: "x", hook: input.hook, posts: input.posts, imagePrompt: input.imagePrompt, scheduledAt: null, notes: "", mode: "create" },
+          "draft-1",
+          3,
+        ),
+      };
+    });
+    const abandon = vi.fn(async () => {});
+    const generateImage = vi.fn(async () => ({ ok: true as const, mediaId: "m1", url: "https://img/1" }));
+    const attachDraftImage = vi.fn(async () => options.attachResult ?? true);
+    const asked: string[] = [];
+    const deps: RevisionDeps = {
+      openWriter: () => ({
+        async ask(message) {
+          asked.push(message);
+          return replies.shift() ?? { ok: false, message: "No reply queued." };
+        },
+      }),
+      complete,
+      abandon,
+      generateImage,
+      attachDraftImage,
+    };
+    return { deps, complete, abandon, generateImage, attachDraftImage, asked };
+  }
+
+  it("completes once with the normalized posts and never abandons", async () => {
+    const { deps, complete, abandon, asked } = revisionDeps({});
+    const result = await runRevision(deps, revisionPlan());
+    expect(result).toMatchObject({ ok: true, draft: { draftId: "draft-1", revision: 3, platform: "x", posts: ["Shorter post"] } });
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(complete).toHaveBeenCalledWith({ hook: "h", posts: ["Shorter post"], imagePrompt: "old prompt" });
+    expect(abandon).not.toHaveBeenCalled();
+    expect(asked[0]).toContain("Make it shorter");
+  });
+
+  it("abandons and reports a writer failure", async () => {
+    const { deps, complete, abandon } = revisionDeps({ replies: [{ ok: false, message: "boom" }] });
+    expect(await runRevision(deps, revisionPlan())).toEqual({ ok: false, message: "boom" });
+    expect(abandon).toHaveBeenCalledTimes(1);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("abandons and reports a writer that throws", async () => {
+    const { deps, abandon } = revisionDeps({});
+    deps.openWriter = () => ({
+      async ask() {
+        throw new Error("secret");
+      },
+    });
+    const result = await runRevision(deps, revisionPlan());
+    expect(result).toEqual({ ok: false, message: "The writer failed." });
+    expect(abandon).toHaveBeenCalledTimes(1);
+  });
+
+  it("abandons and returns the stale message when the draft moved on", async () => {
+    const { deps, abandon, generateImage } = revisionDeps({ completeReason: "stale" });
+    const result = await runRevision(deps, revisionPlan({ regenerateImage: true }));
+    expect(result).toEqual({
+      ok: false,
+      message: "That draft changed while harpy was writing. Try again on the latest version.",
+    });
+    expect(abandon).toHaveBeenCalledTimes(1);
+    expect(generateImage).not.toHaveBeenCalled();
+  });
+
+  it("never generates an image when regenerateImage is false", async () => {
+    const { deps, generateImage } = revisionDeps({});
+    await runRevision(deps, revisionPlan({ regenerateImage: false }));
+    expect(generateImage).not.toHaveBeenCalled();
+  });
+
+  it("generates and attaches a new image against the new revision when asked", async () => {
+    const { deps, generateImage, attachDraftImage, complete } = revisionDeps({});
+    const result = await runRevision(deps, revisionPlan({ regenerateImage: true }));
+    expect(complete).toHaveBeenCalledWith({ hook: "h", posts: ["Shorter post"], imagePrompt: "new prompt" });
+    expect(generateImage).toHaveBeenCalledWith("new prompt");
+    expect(attachDraftImage).toHaveBeenCalledWith({ draftId: "draft-1", revision: 3, mediaId: "m1" });
+    expect(result).toMatchObject({ ok: true, draft: { imageUrl: "https://img/1", imageError: null } });
+  });
+
+  it("keeps the existing media when the writer gives no image prompt", async () => {
+    const { deps, generateImage } = revisionDeps({ replies: [post("x", ["Shorter"])] });
+    await runRevision(deps, revisionPlan({ regenerateImage: true }));
+    expect(generateImage).not.toHaveBeenCalled();
   });
 });

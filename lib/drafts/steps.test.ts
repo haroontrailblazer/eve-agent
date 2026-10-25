@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
     getActiveVoiceGuide: vi.fn(),
     getBrandSettings: vi.fn(),
     getIdea: vi.fn(),
+    getDraft: vi.fn(),
     listDraftsForIdea: vi.fn(),
     listPiecesForIdea: vi.fn(),
     listVoiceExamples: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock("@/lib/voice/store", () => ({
 vi.mock("@/lib/drafts/store", () => ({
   createIdea: mocks.createIdea,
   getIdea: mocks.getIdea,
+  getDraft: mocks.getDraft,
   IdeaNotFoundError: mocks.IdeaNotFoundError,
   listDraftsForIdea: mocks.listDraftsForIdea,
   listPiecesForIdea: mocks.listPiecesForIdea,
@@ -47,9 +49,10 @@ vi.mock("@/lib/drafts/store", () => ({
   setDraftMedia: mocks.setDraftMedia,
   setPieceMedia: mocks.setPieceMedia,
 }));
+vi.mock("@/lib/review", () => ({ completeRevision: vi.fn(), clearRevisionRequest: vi.fn() }));
 vi.mock("@/lib/media/generate", () => ({ generateBrandImage: vi.fn() }));
 
-const { attachDraftImageStep, attachPieceImageStep, prepareDrafting, savePieceStep } = await import("@/lib/drafts/steps");
+const { attachDraftImageStep, attachPieceImageStep, prepareDrafting, prepareRevision, savePieceStep } = await import("@/lib/drafts/steps");
 
 function ctxWith(attributes: Record<string, unknown>): WorkflowStepToolContext {
   return { session: { auth: { current: { attributes } } } } as unknown as WorkflowStepToolContext;
@@ -292,5 +295,91 @@ describe("expected misses come back as results, so the workflow doesn't retry th
   it("still throws when the database fails during an attach", async () => {
     mocks.setDraftMedia.mockRejectedValue(new Error("connection reset"));
     await expect(attachDraftImageStep({ brandId: "brand-1", draftId: "d", revision: 1, mediaId: "m" })).rejects.toThrow("connection reset");
+  });
+});
+
+describe("prepareRevision", () => {
+  const draft = (overrides: Record<string, unknown> = {}) => ({
+    id: "draft-1",
+    ideaId: "idea-1",
+    brandId: "brand-1",
+    platform: "x",
+    status: "pending_review",
+    revision: 4,
+    hook: "h",
+    text: "Old post",
+    posts: ["Old post"],
+    imagePrompt: "old prompt",
+    ...overrides,
+  });
+  const input = { draftId: "draft-1", instruction: "Shorter" };
+
+  beforeEach(() => {
+    mocks.getDraft.mockResolvedValue(draft());
+  });
+
+  it("needs a signed-in brand", async () => {
+    mocks.resolveBrandContext.mockResolvedValue(null);
+    expect(await prepareRevision(ctx, input)).toEqual({ ok: false, message: "You need to be signed in to revise drafts." });
+  });
+
+  it("applies the hourly revision limit", async () => {
+    mocks.enforceRateLimit.mockRejectedValue(new mocks.RateLimitError("Too many requests."));
+    expect(await prepareRevision(ctx, input)).toEqual({ ok: false, message: "Revision limit reached (40 an hour). Try again later." });
+    expect(mocks.enforceRateLimit).toHaveBeenCalledWith({ key: "brand-1", limit: 40, prefix: "draft:revise", windowSeconds: 3_600 });
+  });
+
+  it("reports a draft that is gone", async () => {
+    mocks.getDraft.mockResolvedValue(null);
+    expect(await prepareRevision(ctx, input)).toEqual({ ok: false, message: "That draft is gone." });
+    expect(mocks.getDraft).toHaveBeenCalledWith("brand-1", "draft-1");
+  });
+
+  it.each(["scheduled", "publishing", "published", "failed", "skipped"])("refuses a %s draft", async (status) => {
+    mocks.getDraft.mockResolvedValue(draft({ status }));
+    expect(await prepareRevision(ctx, input)).toEqual({ ok: false, message: "That draft can't be changed now." });
+  });
+
+  it("builds the same brief context as drafting, with no sources", async () => {
+    mocks.listVoiceExamples.mockResolvedValue([example("e1", "x", "Shipped it.", "2026-10-01T00:00:00.000Z")]);
+    const result = await prepareRevision(ctx, { ...input, regenerateImage: true });
+    expect(result).toMatchObject({ ok: true, brandId: "brand-1", userId: "user-1" });
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.plan).toMatchObject({
+      draftId: "draft-1",
+      revision: 4,
+      currentPosts: ["Old post"],
+      instruction: "Shorter",
+      regenerateImage: true,
+      existingImagePrompt: "old prompt",
+      brief: {
+        target: { kind: "post", platform: "x" },
+        timezone: "Asia/Kolkata",
+        voiceGuide: "Write plainly.",
+        preferences: ["No hashtags"],
+        idea: "Small teams ship faster",
+        sources: [],
+        allowLinksOnX: false,
+      },
+    });
+    expect(result.plan.brief.exemplars).toEqual([{ platform: "x", text: "Shipped it." }]);
+    expect(mocks.listVoicePreferences).toHaveBeenCalledWith("brand-1", 30);
+    expect(mocks.listVoiceExamples).toHaveBeenCalledWith("brand-1", 100);
+  });
+
+  it("allows links only on an X draft that already has one", async () => {
+    mocks.getDraft.mockResolvedValue(draft({ text: "Read https://example.com/a" }));
+    const withLink = await prepareRevision(ctx, input);
+    expect(withLink.ok && withLink.plan.brief.allowLinksOnX).toBe(true);
+
+    mocks.getDraft.mockResolvedValue(draft({ platform: "linkedin", text: "Read https://example.com/a" }));
+    const linkedin = await prepareRevision(ctx, input);
+    expect(linkedin.ok && linkedin.plan.brief.allowLinksOnX).toBe(false);
+  });
+
+  it("uses the draft's own text when the idea is gone", async () => {
+    mocks.getIdea.mockResolvedValue(null);
+    const result = await prepareRevision(ctx, input);
+    expect(result.ok && result.plan.brief.idea).toBe("Old post");
   });
 });

@@ -1,6 +1,7 @@
 import type { AgentSendOptions } from "eve/tools";
 import { hasLintErrors, lintPost, lintText, type LintIssue } from "@/lib/drafts/lint";
 import type { ContentPieceRecord } from "@/lib/drafts/records";
+import type { ReviewResult } from "@/lib/review";
 import type { saveContentPiece, SaveGeneratedDraftInput, SaveGeneratedDraftResult } from "@/lib/drafts/store";
 import { PIECE_KINDS, SOCIAL_PLATFORM_KEYS, targetKey, type DraftTarget, type PieceKind, type SocialPlatform } from "@/lib/drafts/types";
 import {
@@ -325,7 +326,7 @@ async function draftOne(deps: DraftingDeps, plan: DraftingPlan, entry: PlanTarge
 
 // Makes and attaches one image. Failures are reported, never thrown.
 async function addImage(
-  deps: DraftingDeps,
+  deps: Pick<DraftingDeps, "generateImage">,
   prompt: string,
   attach: (mediaId: string) => Promise<boolean>,
 ): Promise<{ readonly url: string; readonly error: null } | { readonly url: null; readonly error: string }> {
@@ -386,4 +387,100 @@ export async function runDrafting(deps: DraftingDeps, plan: DraftingPlan): Promi
   pieces.sort((a, b) => PIECE_KINDS.indexOf(a.kind) - PIECE_KINDS.indexOf(b.kind));
 
   return { ok: true, ideaId: plan.ideaId, drafts, pieces, skipped, failed };
+}
+
+export type RevisionPlan = {
+  readonly draftId: string;
+  readonly revision: number;
+  readonly brief: WriterBrief;
+  readonly currentPosts: readonly string[];
+  readonly instruction: string;
+  readonly regenerateImage: boolean;
+  readonly existingImagePrompt: string | null;
+};
+
+export interface RevisionDeps {
+  openWriter(): WriterConversation;
+  complete(input: {
+    readonly hook: string;
+    readonly posts: readonly string[];
+    readonly imagePrompt: string | null;
+  }): Promise<ReviewResult>;
+  // Clears the draft's revision request.
+  abandon(): Promise<void>;
+  generateImage: DraftingDeps["generateImage"];
+  attachDraftImage: DraftingDeps["attachDraftImage"];
+}
+
+export type ReviseDraftResult =
+  | { readonly ok: true; readonly draft: DraftSummary }
+  | { readonly ok: false; readonly message: string };
+
+export const REVISION_STALE_MESSAGE = "That draft changed while harpy was writing. Try again on the latest version.";
+const DRAFT_GONE_MESSAGE = "That draft is gone.";
+const DRAFT_LOCKED_MESSAGE = "That draft can't be changed now.";
+
+// Rewrites one saved draft. The revision request is cleared whenever the
+// revision doesn't land, so the draft never stays marked as in progress.
+export async function runRevision(deps: RevisionDeps, plan: RevisionPlan): Promise<ReviseDraftResult> {
+  const abandon = async () => {
+    try {
+      await deps.abandon();
+    } catch {
+      // Best effort: the failure being reported matters more.
+    }
+  };
+  const fail = async (message: string): Promise<ReviseDraftResult> => {
+    await abandon();
+    return { ok: false, message };
+  };
+
+  let written: WriteResult;
+  try {
+    written = await writeTarget(deps.openWriter(), plan.brief, {
+      kind: "revise",
+      currentPosts: plan.currentPosts,
+      instruction: plan.instruction,
+    });
+  } catch (error) {
+    return fail(thrownMessage(error, WRITER_FAILED_MESSAGE));
+  }
+  if (!written.ok) return fail(written.message);
+
+  const output = written.output as PostOutput;
+  const newPrompt = plan.regenerateImage && hasPrompt(output.imagePrompt) ? output.imagePrompt : null;
+
+  let completed: ReviewResult;
+  try {
+    completed = await deps.complete({
+      hook: output.hook,
+      posts: output.posts,
+      imagePrompt: newPrompt ?? plan.existingImagePrompt,
+    });
+  } catch (error) {
+    await abandon();
+    throw error;
+  }
+  if (!completed.ok) {
+    if (completed.reason === "stale") return fail(REVISION_STALE_MESSAGE);
+    return fail(completed.reason === "not_found" ? DRAFT_GONE_MESSAGE : DRAFT_LOCKED_MESSAGE);
+  }
+
+  const { draft } = completed;
+  const summary: DraftSummary = {
+    draftId: draft.id,
+    platform: draft.platform,
+    revision: draft.revision,
+    hook: draft.hook,
+    posts: draft.posts,
+    imageUrl: null,
+    imageError: null,
+    issues: written.issues.map((issue) => issue.message),
+  };
+  if (newPrompt === null) return { ok: true, draft: summary };
+
+  const image = await addImage(deps, newPrompt, (mediaId) =>
+    deps.attachDraftImage({ draftId: draft.id, revision: draft.revision, mediaId }),
+  );
+  return { ok: true, draft: { ...summary, imageUrl: image.url, imageError: image.error } };
 }
