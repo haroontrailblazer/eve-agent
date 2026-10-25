@@ -224,7 +224,7 @@ WhatsApp is a second front door to the same agent. The channel is `agent/channel
 8. **Edit target.** If an edit marker is waiting, or the message replies to one of harpy's cards, the draft is marked as having a revision request and the turn is told to call `revise_draft` and then `submit_for_review` for that draft only.
 9. **Turn.** Everything else starts an eve turn as the owner principal, with the sender's number in `auth.attributes`.
 
-Each reply is posted once, complete, because WhatsApp can't edit sent messages.
+Each reply is posted once, complete, because WhatsApp can't edit sent messages. The short line the model writes before a tool such as `draft_posts` is posted too, but only the first one in a turn (`planWhatsAppReply` in `lib/whatsapp/reply.ts`).
 
 ### Cards, buttons and the edit marker
 

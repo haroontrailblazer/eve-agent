@@ -4,7 +4,7 @@ import { resolveChannelAuth } from "@/lib/channel-auth";
 import { createChatState, createHarpyWhatsAppAdapter } from "@/lib/whatsapp/adapter";
 import { getWhatsAppConfig } from "@/lib/whatsapp/config";
 import { runInbound, toInboundMessage } from "@/lib/whatsapp/inbound";
-import { formatWhatsAppReply } from "@/lib/whatsapp/reply";
+import { planWhatsAppReply, TOOL_LINE_TURN_STATE_KEY } from "@/lib/whatsapp/reply";
 import { handleIncomingAction } from "@/lib/whatsapp/review";
 import { webhookResetter, wrapWhatsAppRoutes } from "@/lib/whatsapp/route";
 import { handleStatuses } from "@/lib/whatsapp/statuses";
@@ -35,12 +35,15 @@ const bridge = chatSdkChannel({
       extraAttributes: { waId: event.user.userId },
     }),
   events: {
-    // Replaces eve's default post. Like the default, text the model writes
-    // before a tool call is not sent.
+    // Replaces eve's default post. Unlike the default, the first line the model
+    // writes before a tool call in a turn is sent too; planWhatsAppReply decides.
+    // eve's default turn.started (typing) is kept.
     async "message.completed"(eventData, channel) {
-      if (eventData.finishReason === "tool-calls" || !eventData.message || !channel.thread) return;
-      const { text, imageUrls } = formatWhatsAppReply(eventData.message);
-      if (!text && imageUrls.length === 0) return;
+      if (!channel.thread) return;
+      const plan = planWhatsAppReply(eventData, channel.state[TOOL_LINE_TURN_STATE_KEY]);
+      channel.state[TOOL_LINE_TURN_STATE_KEY] = plan.toolLineTurnId;
+      if (!plan.reply) return;
+      const { text, imageUrls } = plan.reply;
       await channel.thread.post({
         markdown: text,
         attachments: imageUrls.map((url) => ({
