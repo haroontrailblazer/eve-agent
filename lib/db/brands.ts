@@ -69,6 +69,12 @@ export async function findUserIdByEmail(email: string): Promise<string | null> {
   return rows[0]?.id ?? null;
 }
 
+export async function findEmailByUserId(userId: string): Promise<string | null> {
+  const rows = await db.select({ email: user.email }).from(user).where(eq(user.id, userId)).limit(1);
+
+  return rows[0]?.email ?? null;
+}
+
 export async function getBrandSettings(
   brandId: string,
 ): Promise<{ readonly timezone: string; readonly name: string } | null> {
