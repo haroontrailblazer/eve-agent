@@ -15,7 +15,7 @@ Done on the `harpy-v2` branch:
 - **Design system.** Silver tokens, a type scale, status and platform glyph colors, a system/light/dark theme setting, shadcn primitives and harpy components, all shown on `/design`.
 - **Shell and pages.** A sidebar shell with Studio, Calendar, Inbox, Brief, Brand voice, Channels, Chat and Settings. `/profile` redirects to `/settings`.
 
-Not done yet: migrations 0006 to 0009 are generated but not applied, and the manual verification pass has not been run. See the owner checklist in [Setup and Deployment](docs/setup-and-deploy.md#owner-verification-checklist). Publishing, scheduling and the real content pages come in later phases.
+Phase 1 shipped to production with migrations 0006 to 0009 applied. The owner checklist is in [Setup and Deployment](docs/setup-and-deploy.md#owner-verification-checklist). Publishing, scheduling and the real content pages come in later phases.
 
 ## Stage 2 status: Studio and drafting
 

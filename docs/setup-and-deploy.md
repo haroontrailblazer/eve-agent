@@ -360,7 +360,7 @@ Stage 2 adds Studio, drafting from Studio and from chat, the writer subagent, an
 
 ### Deploy notes
 
-- Migration `0010_studio_drafts` only adds tables (`idea`, `draft`, `draft_revision`, `content_piece`, `voice_guide`, `voice_example`, `voice_preference`). Nothing existing is altered, so the owner can run it before merging with `! pnpm db:migrate:production`. Ask before any deploy or merge.
+- Migration `0010_studio_drafts` only adds tables (`idea`, `draft`, `draft_revision`, `content_piece`, `voice_guide`, `voice_example`, `voice_preference`). Nothing existing is altered, so the owner can run it before merging with `! pnpm db:migrate:production` (the `!` runs it from the Claude Code prompt; in a terminal, type `pnpm db:migrate:production`). Ask before any deploy or merge.
 - Draft images need a **public** Vercel Blob store connected to the project (`BLOB_READ_WRITE_TOKEN`). Without it drafts still save, without images.
 - Drafting adds no schedule, so it fits Vercel Hobby. The writer runs in its own sessions, which keeps each step well under 300 seconds. Limits are 20 drafting runs and 40 revisions an hour per brand, plus the existing 50 generated images a day.
 - The writer uses `anthropic/claude-opus-5.5` with reasoning `"high"`. The main agent is unchanged.

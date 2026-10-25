@@ -61,4 +61,4 @@ harpy is a private social media control room on eve 0.82 and Next.js 16. Use thi
 ## Verification
 
 - Run `pnpm test`, `pnpm typecheck` and `pnpm build`. Run `pnpm eve:build` too, or `pnpm exec eve build --skip-sandbox-prewarm` on a machine without Docker.
-- For chat changes, walk checklist M1 in `docs/setup-and-deploy.md`, and the stage 2 owner checklist for Studio and drafting, (first message, follow-up, refresh mid-stream, stop, authorization Connect and Skip, attachments, image generation and editing, legacy chats).
+- For chat changes, walk checklist M1 in `docs/setup-and-deploy.md` (first message, follow-up, refresh mid-stream, stop, authorization Connect and Skip, attachments, image generation and editing, legacy chats), and the stage 2 owner checklist for Studio and drafting.
