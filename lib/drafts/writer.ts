@@ -89,6 +89,15 @@ function formatNow(now: string, timezone: string): string {
   return `${shown} (${timezone})`;
 }
 
+// A source attribute on one line, without the characters that could end the
+// attribute or the tag.
+function sourceAttribute(name: string, value: string | null): string {
+  const clean = (value ?? "").replace(/[\r\n"<>]+/g, " ").replace(/\s+/g, " ").trim();
+  return clean === "" ? "" : ` ${name}="${clean}"`;
+}
+
+// Fetched text is data, not instructions: each source sits inside its own
+// <source> fence, and a closing tag inside the text can't end the fence early.
 function sourcesSection(sources: readonly DraftSource[]): string {
   if (sources.length === 0) return "None.";
   const parts: string[] = [];
@@ -98,8 +107,9 @@ function sourcesSection(sources: readonly DraftSource[]): string {
     const limit = Math.min(SOURCE_TEXT_MAX_CHARS, remaining);
     const text = source.text.length > limit ? `${source.text.slice(0, limit)}\n${TRUNCATED}` : source.text;
     remaining -= Math.min(source.text.length, limit);
-    const heading = [source.title, source.url].filter((v): v is string => Boolean(v)).join(" - ");
-    parts.push(`### ${heading || "Source"}\n${text}`);
+    const fenced = text.replace(/<\/source/gi, "<\\/source");
+    const open = `<source${sourceAttribute("title", source.title)}${sourceAttribute("url", source.url)}>`;
+    parts.push(`${open}\n${fenced}\n</source>`);
   }
   return parts.join("\n\n");
 }

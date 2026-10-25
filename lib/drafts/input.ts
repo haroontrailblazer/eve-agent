@@ -9,7 +9,7 @@ import {
   type PieceKind,
   type SocialPlatform,
 } from "@/lib/drafts/types";
-import { MAX_SOURCES } from "@/lib/drafts/writer";
+import { MAX_SOURCES, SOURCE_TEXT_MAX_CHARS } from "@/lib/drafts/writer";
 
 // draft_posts input and target resolution. Pure, so the workflow body can use it.
 
@@ -26,7 +26,13 @@ export const DRAFT_POSTS_INPUT = z.object({
       z.object({
         url: z.string().optional(),
         title: z.string().optional(),
-        text: z.string().min(1).describe("The text you fetched or the owner pasted."),
+        // No hard max: the writer truncates longer text rather than the call failing.
+        text: z
+          .string()
+          .min(1)
+          .describe(
+            `The article's main text, at most ${SOURCE_TEXT_MAX_CHARS.toLocaleString("en-US")} characters. Skip navigation, footers and comments.`,
+          ),
       }),
     )
     .max(MAX_SOURCES)

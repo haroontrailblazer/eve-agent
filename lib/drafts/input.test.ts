@@ -51,6 +51,14 @@ describe("DRAFT_POSTS_INPUT", () => {
     expect(DRAFT_POSTS_INPUT.safeParse({ idea: "Idea", sources }).success).toBe(false);
   });
 
+  it("asks for at most 12,000 characters of main text a source but accepts more", () => {
+    const text = DRAFT_POSTS_INPUT.shape.sources.unwrap().element.shape.text;
+    expect(text.description).toBe(
+      "The article's main text, at most 12,000 characters. Skip navigation, footers and comments.",
+    );
+    expect(DRAFT_POSTS_INPUT.safeParse({ idea: "Idea", sources: [{ text: "a".repeat(30_000) }] }).success).toBe(true);
+  });
+
   it("rejects a source without text", () => {
     expect(DRAFT_POSTS_INPUT.safeParse({ idea: "Idea", sources: [{ url: "https://a.co", text: "" }] }).success).toBe(false);
   });
