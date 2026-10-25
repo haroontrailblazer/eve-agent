@@ -92,6 +92,45 @@ describe("decideSlackInbound", () => {
     await expect(decideSlackInbound({ ...base, isDirect: false })).resolves.toEqual({ kind: "drop" });
   });
 
+  it("drops a linked user's channel message outside a thread harpy is in", async () => {
+    resolveChannelAuth.mockResolvedValue(linkedAuth);
+
+    await expect(decideSlackInbound({ ...base, isDirect: false, isSubscribed: false })).resolves.toEqual({
+      kind: "drop",
+    });
+    await expect(decideSlackInbound({ ...base, isDirect: false })).resolves.toEqual({ kind: "drop" });
+    expect(resolveChannelAuth).not.toHaveBeenCalled();
+  });
+
+  it("starts a turn for a linked user's message in a thread harpy is in", async () => {
+    resolveChannelAuth.mockResolvedValue(linkedAuth);
+
+    await expect(decideSlackInbound({ ...base, isDirect: false, isSubscribed: true })).resolves.toEqual({
+      auth: linkedAuth,
+      kind: "turn",
+    });
+  });
+
+  it("drops an unlinked user's message in a thread harpy is in", async () => {
+    resolveChannelAuth.mockResolvedValue(null);
+
+    await expect(decideSlackInbound({ ...base, isDirect: false, isSubscribed: true })).resolves.toEqual({
+      kind: "drop",
+    });
+  });
+
+  it("answers DMs and mentions whether or not the thread is subscribed", async () => {
+    resolveChannelAuth.mockResolvedValue(linkedAuth);
+
+    await expect(decideSlackInbound({ ...base, isSubscribed: false })).resolves.toEqual({
+      auth: linkedAuth,
+      kind: "turn",
+    });
+    await expect(
+      decideSlackInbound({ ...base, isDirect: false, isMention: true, isSubscribed: false }),
+    ).resolves.toEqual({ auth: linkedAuth, kind: "turn" });
+  });
+
   it("links on a LINK code in a DM", async () => {
     redeemLinkCode.mockResolvedValue({ email: "owner@example.com", ok: true });
 

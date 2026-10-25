@@ -251,7 +251,7 @@ Delivery statuses (sent, delivered, read, failed) arrive on the same webhook, bu
 
 ### Slack identity
 
-Slack runs on the same principal. A user makes a code with Link Slack on the Channels page and sends `LINK <code>` to harpy in a Slack DM (`lib/slack-auth.ts`). From then on that Slack user acts as the owner: drafts show as "via Slack" in Studio and Brand voice preferences apply. Approval prompts resumed in Slack keep the linked principal. Someone who isn't linked gets a hint to link in DMs and mentions, and silence elsewhere.
+Slack runs on the same principal. A user makes a code with Link Slack on the Channels page and sends `LINK <code>` to harpy in a Slack DM (`lib/slack-auth.ts`). From then on that Slack user acts as the owner: drafts show as "via Slack" in Studio and Brand voice preferences apply. Approval prompts resumed in Slack keep the linked principal. Someone who isn't linked gets a hint to link in DMs and mentions, and silence elsewhere. In a channel, harpy answers a message without a mention only in a thread it is already in.
 
 ## Invariants
 

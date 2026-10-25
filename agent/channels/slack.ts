@@ -13,11 +13,12 @@ import { decideSlackInbound, resolveSlackAuth } from "@/lib/slack-auth";
 const slackConnector = process.env.SLACK_CONNECTOR ?? "slack/eve-chat-template";
 
 // Linked Slack users run as the owner principal; everyone else gets a hint in
-// DMs and mentions, and silence elsewhere. A failure drops the message.
+// DMs and mentions, and silence elsewhere. Other channel messages count only
+// in a thread harpy is already in. A failure drops the message.
 async function admit(
   ctx: SlackInboundMessageContext,
   message: SlackMessage,
-  kind: { readonly isDirect: boolean; readonly isMention: boolean },
+  kind: { readonly isDirect: boolean; readonly isMention: boolean; readonly isSubscribed?: boolean },
 ) {
   try {
     const decision = await decideSlackInbound({
@@ -49,8 +50,10 @@ export default slackChannel({
   uploadPolicy: "disabled",
   onDirectMessage: (ctx, message) => admit(ctx, message, { isDirect: true, isMention: false }),
   onAppMention: (ctx, message) => admit(ctx, message, { isDirect: false, isMention: true }),
-  onMessage: (ctx, message) =>
-    admit(ctx, message, { isDirect: false, isMention: ctx.isBotMentioned() }),
+  // eve keeps mentions of harpy out of onMessage (onAppMention takes them), so
+  // this is a plain channel message.
+  onMessage: async (ctx, message) =>
+    admit(ctx, message, { isDirect: false, isMention: false, isSubscribed: await ctx.isSubscribed() }),
   // A resumed approval keeps the linked principal, not the raw Slack one.
   onInputResponse: async (ctx) => {
     const auth = await resolveSlackAuth(ctx.defaultAuth);

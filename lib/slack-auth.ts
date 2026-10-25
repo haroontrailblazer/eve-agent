@@ -63,7 +63,14 @@ export async function decideSlackInbound(input: {
   readonly text: string;
   readonly isDirect: boolean;
   readonly isMention: boolean;
+  // Whether the message is in a thread harpy is already in. Read only for a
+  // plain channel message, which harpy answers nowhere else.
+  readonly isSubscribed?: boolean;
 }): Promise<SlackInboundDecision> {
+  if (!input.isDirect && !input.isMention && !input.isSubscribed) {
+    return { kind: "drop" };
+  }
+
   const code = input.isDirect ? parseLinkCommand(input.text) : null;
   const externalId = slackExternalId(input.defaultAuth);
 
