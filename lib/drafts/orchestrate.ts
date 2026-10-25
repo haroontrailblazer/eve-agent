@@ -69,6 +69,8 @@ export type DraftingPlan = {
   readonly sources: readonly DraftSource[];
   readonly allowLinksOnX: boolean;
   readonly redraft: boolean;
+  // The owner's photo: every draft and piece uses it, and no image is generated.
+  readonly ownerMediaId: string | null;
   readonly targets: readonly {
     readonly target: DraftTarget;
     readonly exemplars: WriterBrief["exemplars"];
@@ -348,6 +350,15 @@ async function addImage(
   return attached ? { url: image.url, error: null } : { url: null, error: ATTACH_MISSED_MESSAGE };
 }
 
+// Attaches the owner's photo. Returns the failure message, or null on success.
+async function attachOwnerPhoto(attach: () => Promise<boolean>): Promise<string | null> {
+  try {
+    return (await attach()) ? null : ATTACH_MISSED_MESSAGE;
+  } catch {
+    return ATTACH_FAILED_MESSAGE;
+  }
+}
+
 function hasPrompt(prompt: string | null): prompt is string {
   return prompt !== null && prompt.trim() !== "";
 }
@@ -356,9 +367,20 @@ function hasPrompt(prompt: string | null): prompt is string {
 // parallel. One target failing never stops the others.
 export async function runDrafting(deps: DraftingDeps, plan: DraftingPlan): Promise<DraftPostsResult> {
   const outcomes = await Promise.all(plan.targets.map((entry) => draftOne(deps, plan, entry)));
+  const ownerMediaId = plan.ownerMediaId;
 
   const withImages = await Promise.all(
     outcomes.map(async (outcome): Promise<Outcome> => {
+      if (ownerMediaId !== null && outcome.kind === "draft") {
+        const { draftId, revision } = outcome.summary;
+        const failure = await attachOwnerPhoto(() => deps.attachDraftImage({ draftId, revision, mediaId: ownerMediaId }));
+        return { ...outcome, summary: { ...outcome.summary, imageError: failure } };
+      }
+      if (ownerMediaId !== null && outcome.kind === "piece") {
+        const { pieceId } = outcome.summary;
+        await attachOwnerPhoto(() => deps.attachPieceImage({ pieceId, mediaId: ownerMediaId }));
+        return outcome;
+      }
       if (outcome.kind === "draft" && hasPrompt(outcome.imagePrompt)) {
         const { draftId, revision } = outcome.summary;
         const image = await addImage(deps, outcome.imagePrompt, (mediaId) =>

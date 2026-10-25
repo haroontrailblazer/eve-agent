@@ -69,6 +69,7 @@ function plan(input: {
   readonly redraft?: boolean;
   readonly now?: string;
   readonly allowLinksOnX?: boolean;
+  readonly ownerMediaId?: string;
 }): DraftingPlan {
   return {
     ideaId: "idea-1",
@@ -80,6 +81,7 @@ function plan(input: {
     sources: [],
     allowLinksOnX: input.allowLinksOnX ?? false,
     redraft: input.redraft ?? false,
+    ownerMediaId: input.ownerMediaId ?? null,
     targets: input.targets.map((name) => ({
       target: toTarget(name),
       exemplars: [],
@@ -277,6 +279,36 @@ describe("runDrafting", () => {
     const deps = fakeDeps({ replies: { x: [post("x", ["New."])] } });
     await runDrafting(deps, plan({ targets: ["x"], existing: { x: { draftId: "d1", revision: 2 } }, redraft: true }));
     expect(deps.saved[0]!.mode).toEqual({ expectedRevision: 2 });
+  });
+
+  it("puts the owner's photo on every draft and piece without generating images", async () => {
+    const deps = fakeDeps({
+      replies: {
+        x: [post("x", ["a"], { imagePrompt: "a desk" })],
+        threads: [post("threads", ["b"])],
+        carousel_outline: [carousel()],
+      },
+    });
+    const result = await runDrafting(deps, plan({ targets: ["x", "threads", "carousel_outline"], ownerMediaId: "m1" }));
+    expect(deps.prompts).toEqual([]);
+    expect(deps.attached).toEqual(
+      expect.arrayContaining([
+        { id: "draft-x", mediaId: "m1" },
+        { id: "draft-threads", mediaId: "m1" },
+        { id: "piece-carousel_outline", mediaId: "m1" },
+      ]),
+    );
+    expect(deps.attached).toHaveLength(3);
+    expect(result).toMatchObject({ ok: true, drafts: [{ imageError: null }, { imageError: null }] });
+  });
+
+  it("reports a draft that changed before the owner's photo was attached", async () => {
+    const deps = fakeDeps({ replies: { x: [post("x", ["a"])] }, attachMisses: true });
+    const result = await runDrafting(deps, plan({ targets: ["x"], ownerMediaId: "m1" }));
+    expect(result).toMatchObject({
+      ok: true,
+      drafts: [{ imageError: "That draft changed before its image was added." }],
+    });
   });
 
   it("reports a draft whose idea is gone", async () => {
