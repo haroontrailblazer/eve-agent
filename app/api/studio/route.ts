@@ -31,5 +31,5 @@ export async function GET() {
     throw error;
   }
 
-  return NextResponse.json(await loadStudioSnapshot(brandId), { headers: NO_STORE });
+  return NextResponse.json(await loadStudioSnapshot(brandId, viewer.id), { headers: NO_STORE });
 }

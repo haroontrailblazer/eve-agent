@@ -48,6 +48,16 @@ export const DRAFT_POSTS_INPUT = z.object({
     .describe("Extra pieces: a reel script or a carousel outline. Only when asked."),
   redraft: z.boolean().optional().describe("Rewrite drafts that already exist for this idea."),
   allowLinksOnX: z.boolean().optional().describe("Allow a link in the X draft. Links on X cost $0.20 a post."),
+  imageMediaId: z
+    .string()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe("A mediaId from save_photo. Every post uses this photo instead of a generated image."),
+  sourceKind: z
+    .enum(["voice", "photo"])
+    .optional()
+    .describe("Set to voice when the idea came from a voice note, or photo when it came from a photo."),
 });
 
 export type DraftPostsInput = z.infer<typeof DRAFT_POSTS_INPUT>;

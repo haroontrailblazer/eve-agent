@@ -13,12 +13,14 @@ export function AgentChatBootstrapSync({
   setupStatus,
   slackConfigured,
   viewer,
+  whatsappConfigured,
 }: {
   readonly chats: readonly ChatListItem[];
   readonly nextCursor: string | null;
   readonly setupStatus: SetupStatus;
   readonly slackConfigured: boolean;
   readonly viewer: Viewer | null;
+  readonly whatsappConfigured: boolean;
 }) {
   useEffect(() => {
     const detail: ChatBootstrapSyncDetail = {
@@ -27,6 +29,7 @@ export function AgentChatBootstrapSync({
       setupStatus,
       slackConfigured,
       viewer,
+      whatsappConfigured,
     };
     const target = window as Window & {
       __eveChatBootstrapSync?: ChatBootstrapSyncDetail;
@@ -38,7 +41,7 @@ export function AgentChatBootstrapSync({
         detail,
       }),
     );
-  }, [chats, nextCursor, setupStatus, slackConfigured, viewer]);
+  }, [chats, nextCursor, setupStatus, slackConfigured, viewer, whatsappConfigured]);
 
   return null;
 }

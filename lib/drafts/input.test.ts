@@ -83,3 +83,15 @@ describe("ideaSourceChannel", () => {
     expect(ideaSourceChannel({ channel: "studio" })).toBe("web");
   });
 });
+
+describe("DRAFT_POSTS_INPUT photo fields", () => {
+  it("accepts imageMediaId and a voice or photo source", () => {
+    expect(DRAFT_POSTS_INPUT.safeParse({ idea: "x", imageMediaId: "m1", sourceKind: "voice" }).success).toBe(true);
+    expect(DRAFT_POSTS_INPUT.safeParse({ idea: "x", sourceKind: "photo" }).success).toBe(true);
+  });
+
+  it("rejects other source kinds and a long media id", () => {
+    expect(DRAFT_POSTS_INPUT.safeParse({ idea: "x", sourceKind: "video" }).success).toBe(false);
+    expect(DRAFT_POSTS_INPUT.safeParse({ idea: "x", imageMediaId: "m".repeat(101) }).success).toBe(false);
+  });
+});

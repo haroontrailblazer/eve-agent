@@ -23,6 +23,8 @@ import { canApply } from "@/lib/drafts/state";
 import type { DraftTarget } from "@/lib/drafts/types";
 import type { DraftSource } from "@/lib/drafts/writer";
 import { errorMessage } from "@/lib/mcp-client";
+import { getMediaAsset } from "@/lib/media/assets";
+import { isAllowedImageType } from "@/lib/media/limits";
 import { resolveBrandContext } from "@/lib/mcp-context";
 import { generateBrandImage } from "@/lib/media/generate";
 import { clearRevisionRequest, completeRevision, type ReviewResult } from "@/lib/review";
@@ -73,6 +75,14 @@ export async function prepareDrafting(
   const ideaText = input.idea?.trim() ?? "";
   if ((ideaId === "") === (ideaText === "")) return { ok: false, message: "Give me an idea to draft." };
 
+  const ownerMediaId = input.imageMediaId ?? null;
+  if (ownerMediaId !== null) {
+    const photo = await getMediaAsset(ownerMediaId);
+    if (!photo || photo.brandId !== brandId || !isAllowedImageType(photo.mediaType)) {
+      return { ok: false, message: "That photo is gone. Send it again." };
+    }
+  }
+
   try {
     await enforceRateLimit({ key: brandId, limit: DRAFT_RUNS_PER_HOUR, prefix: "draft:run", windowSeconds: HOUR_SECONDS });
   } catch (error) {
@@ -119,9 +129,9 @@ export async function prepareDrafting(
       brandId,
       userId,
       text: ideaText,
-      sourceKind: firstUrl ? "link" : "text",
+      sourceKind: input.sourceKind ?? (firstUrl ? "link" : "text"),
       sourceChannel: ideaSourceChannel(authAttributes(ctx)),
-      sourceRef: firstUrl,
+      sourceRef: firstUrl ?? ownerMediaId,
       requested: {
         platforms: targets.flatMap((target) => (target.kind === "post" ? [target.platform] : [])),
         pieces: targets.flatMap((target) => (target.kind === "piece" ? [target.piece] : [])),
@@ -142,6 +152,7 @@ export async function prepareDrafting(
       sources,
       allowLinksOnX: input.allowLinksOnX ?? false,
       redraft: input.redraft ?? false,
+      ownerMediaId,
       targets: targets.map((target) => ({
         target,
         exemplars: exemplarsFor(context.examples, target, idea.text),

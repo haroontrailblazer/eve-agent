@@ -60,6 +60,7 @@ export function AppSidebar({
   onSignIn,
   setupStatus,
   slackConfigured,
+  whatsappConfigured,
   viewer,
 }: {
   readonly activeChatId: string | null;
@@ -75,6 +76,7 @@ export function AppSidebar({
   readonly onSignIn: () => void;
   readonly setupStatus: SetupStatus;
   readonly slackConfigured: boolean;
+  readonly whatsappConfigured: boolean;
   readonly viewer: Viewer | null;
 }) {
   const { isMobile, setOpenMobile } = useSidebar();
@@ -121,7 +123,10 @@ export function AppSidebar({
 
       <SidebarFooter>
         <div className="flex flex-col items-start gap-1.5 px-2 pb-1">
-          <ChannelStatusPill platform="whatsapp" state="not_connected" />
+          <ChannelStatusPill
+            platform="whatsapp"
+            state={whatsappConfigured ? "connected" : "not_connected"}
+          />
           <ChannelStatusPill
             platform="slack"
             state={slackConfigured ? "connected" : "not_connected"}

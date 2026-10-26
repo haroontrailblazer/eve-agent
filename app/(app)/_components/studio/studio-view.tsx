@@ -166,6 +166,7 @@ export function StudioView() {
                 refresh={refresh}
                 selectedId={selectedId}
                 timezone={snapshot.timezone}
+                whatsappLinked={snapshot.whatsappLinked}
               />
             ))}
           </div>

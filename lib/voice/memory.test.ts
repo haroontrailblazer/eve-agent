@@ -15,12 +15,22 @@ function example(platform: VoiceExample["platform"]): VoiceExample {
 }
 
 describe("buildVoiceRecall", () => {
-  it("produces stable ids and content prefixes", () => {
+  it("returns two keyed messages", () => {
     const { messages } = buildVoiceRecall({ preferences: [preference], exemplars: [example("linkedin"), example(null)] });
     expect(messages).toEqual([
-      { id: "preference:p1", content: "Owner preference: never use hashtags" },
-      { id: "example:e1", content: "An example of the owner's past LinkedIn writing:\nhello world" },
-      { id: "example:e1", content: "An example of the owner's past post writing:\nhello world" },
+      { id: "voice:preferences", content: "Owner preferences:\n- never use hashtags" },
+      {
+        id: "voice:examples",
+        content:
+          "An example of the owner's past LinkedIn writing:\nhello world\n\nAn example of the owner's past post writing:\nhello world",
+      },
+    ]);
+  });
+
+  it("says so when there are no preferences or examples", () => {
+    expect(buildVoiceRecall({ preferences: [], exemplars: [] }).messages).toEqual([
+      { id: "voice:preferences", content: "The owner has stated no writing preferences." },
+      { id: "voice:examples", content: "No example posts are saved." },
     ]);
   });
 });

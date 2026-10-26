@@ -20,6 +20,12 @@ import type {
   RevisionKind,
   SocialPlatform,
 } from "@/lib/drafts/types";
+import type {
+  NotificationDelivery,
+  NotificationKind,
+  NotificationPayload,
+  NotificationStatus,
+} from "@/lib/notify/types";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -394,6 +400,55 @@ export const voicePreference = pgTable(
   (table) => [index("idx_voice_preference_brand").on(table.brandId, table.createdAt)],
 );
 
+// The notification outbox: one row per logical notification, deduped on
+// dedupe_key so a retried producer never sends twice.
+export const notification = pgTable(
+  "notification",
+  {
+    id: text("id").primaryKey(),
+    brandId: brandIdColumn(),
+    channel: text("channel").$type<"whatsapp">().notNull(),
+    recipient: text("recipient").notNull(),
+    kind: text("kind").$type<NotificationKind>().notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    payload: jsonb("payload").$type<NotificationPayload>().notNull(),
+    status: text("status").$type<NotificationStatus>().notNull().default("pending"),
+    delivery: text("delivery").$type<NotificationDelivery>(),
+    providerMessageId: text("provider_message_id"),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_notification_dedupe").on(table.dedupeKey),
+    index("idx_notification_brand_created").on(table.brandId, table.createdAt),
+  ],
+);
+
+// Which draft revision a sent WhatsApp message shows, so a reply or tap on it
+// resolves to the right draft.
+export const waMessageMap = pgTable(
+  "wa_message_map",
+  {
+    id: text("id").primaryKey(),
+    brandId: brandIdColumn(),
+    wamid: text("wamid").notNull(),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => draft.id, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    kind: text("kind").$type<"card" | "full_text">().notNull(),
+    notificationId: text("notification_id").references(() => notification.id, { onDelete: "set null" }),
+    recipient: text("recipient").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_wa_message_map_wamid").on(table.wamid),
+    index("idx_wa_message_map_draft").on(table.draftId),
+  ],
+);
+
 export type Chat = typeof chat.$inferSelect;
 export type ChatEvent = typeof chatEvent.$inferSelect;
 export type User = typeof user.$inferSelect;
@@ -411,3 +466,5 @@ export type ContentPiece = typeof contentPiece.$inferSelect;
 export type VoiceGuideRow = typeof voiceGuide.$inferSelect;
 export type VoiceExampleRow = typeof voiceExample.$inferSelect;
 export type VoicePreferenceRow = typeof voicePreference.$inferSelect;
+export type Notification = typeof notification.$inferSelect;
+export type WaMessageMap = typeof waMessageMap.$inferSelect;

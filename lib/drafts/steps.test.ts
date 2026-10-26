@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
     getActiveVoiceGuide: vi.fn(),
     getBrandSettings: vi.fn(),
     getIdea: vi.fn(),
+    getMediaAsset: vi.fn(),
     getDraft: vi.fn(),
     listDraftsForIdea: vi.fn(),
     listPiecesForIdea: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock("@/lib/drafts/store", () => ({
   setPieceMedia: mocks.setPieceMedia,
 }));
 vi.mock("@/lib/review", () => ({ completeRevision: vi.fn(), clearRevisionRequest: mocks.clearRevisionRequest }));
+vi.mock("@/lib/media/assets", () => ({ getMediaAsset: mocks.getMediaAsset }));
 vi.mock("@/lib/media/generate", () => ({ generateBrandImage: vi.fn() }));
 
 const { attachDraftImageStep, attachPieceImageStep, clearIdeaRequestStep, prepareDrafting, prepareRevision, savePieceStep } =
@@ -105,6 +107,55 @@ beforeEach(() => {
 });
 
 describe("prepareDrafting", () => {
+  describe("with the owner's photo", () => {
+    const photo = { id: "m1", brandId: "brand-1", mediaType: "image/jpeg" };
+
+    it("keeps the photo and records the idea's source", async () => {
+      mocks.getMediaAsset.mockResolvedValue(photo);
+      const result = await prepareDrafting(ctx, { idea: "Text", imageMediaId: "m1", sourceKind: "voice" });
+      expect(result).toMatchObject({ ok: true, plan: { ownerMediaId: "m1" } });
+      expect(mocks.createIdea).toHaveBeenCalledWith(expect.objectContaining({ sourceKind: "voice", sourceRef: "m1" }));
+    });
+
+    it("uses the source url for the ref and link for the kind when no kind is given", async () => {
+      mocks.getMediaAsset.mockResolvedValue(photo);
+      await prepareDrafting(ctx, {
+        idea: "Text",
+        imageMediaId: "m1",
+        sources: [{ url: "https://example.com/a", text: "Body" }],
+      });
+      expect(mocks.createIdea).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceKind: "link", sourceRef: "https://example.com/a" }),
+      );
+    });
+
+    it("refuses another brand's photo", async () => {
+      mocks.getMediaAsset.mockResolvedValue({ ...photo, brandId: "brand-2" });
+      expect(await prepareDrafting(ctx, { idea: "Text", imageMediaId: "m1" })).toEqual({
+        ok: false,
+        message: "That photo is gone. Send it again.",
+      });
+      expect(mocks.createIdea).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["missing", null],
+      ["not an allowed image type", { ...photo, mediaType: "application/pdf" }],
+    ])("refuses a photo that is %s", async (_label, asset) => {
+      mocks.getMediaAsset.mockResolvedValue(asset);
+      expect(await prepareDrafting(ctx, { idea: "Text", imageMediaId: "m1" })).toEqual({
+        ok: false,
+        message: "That photo is gone. Send it again.",
+      });
+    });
+  });
+
+  it("records a voice idea without a photo", async () => {
+    const result = await prepareDrafting(ctx, { idea: "Text", sourceKind: "voice" });
+    expect(result).toMatchObject({ ok: true, plan: { ownerMediaId: null } });
+    expect(mocks.createIdea).toHaveBeenCalledWith(expect.objectContaining({ sourceKind: "voice", sourceRef: null }));
+  });
+
   it("needs a signed-in brand", async () => {
     mocks.resolveBrandContext.mockResolvedValue(null);
     expect(await prepareDrafting(ctx, { idea: "x" })).toEqual({ ok: false, message: "You need to be signed in to draft posts." });

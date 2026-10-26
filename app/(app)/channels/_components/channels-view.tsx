@@ -8,7 +8,6 @@ import {
   type McpConnectionsResult,
 } from "@/app/actions/mcp";
 import { useChatShell } from "@/app/_components/chat-shell-context";
-import { ChannelStatusPill } from "@/components/harpy/channel-status-pill";
 import { ConfirmActionButton } from "@/components/harpy/confirm-action-button";
 import { PLATFORM_ICONS, PLATFORM_TEXT_CLASS } from "@/components/harpy/platform-icon";
 import { Button } from "@/components/ui/button";
@@ -18,11 +17,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { McpConnectionSummary } from "@/lib/mcp-summary";
 import { getPlatform, SOCIAL_PLATFORMS } from "@/lib/platforms";
 import { cn } from "@/lib/utils";
+import { MessagingSection } from "./messaging-section";
 
 export function ChannelsView() {
-  // The same source as the sidebar's Slack pill, so the two always agree.
-  const { slackConfigured } = useChatShell();
-
   return (
     <>
       <Section title="Social accounts">
@@ -53,13 +50,7 @@ export function ChannelsView() {
       </Section>
 
       <Section title="Messaging">
-        <div className="flex flex-wrap gap-2">
-          <ChannelStatusPill platform="whatsapp" state="not_connected" />
-          <ChannelStatusPill
-            platform="slack"
-            state={slackConfigured ? "connected" : "not_connected"}
-          />
-        </div>
+        <MessagingSection />
       </Section>
 
       <Section title="Tools">

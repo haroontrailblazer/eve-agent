@@ -1,0 +1,106 @@
+import type { Message } from "chat";
+import { chatSdkChannel, messageToUserContent } from "eve/channels/chat-sdk";
+import { resolveChannelAuth } from "@/lib/channel-auth";
+import { createChatState, createHarpyWhatsAppAdapter } from "@/lib/whatsapp/adapter";
+import { getWhatsAppConfig } from "@/lib/whatsapp/config";
+import { runInbound, toInboundMessage } from "@/lib/whatsapp/inbound";
+import { planWhatsAppReply, TOOL_LINE_TURN_STATE_KEY } from "@/lib/whatsapp/reply";
+import { handleIncomingAction } from "@/lib/whatsapp/review";
+import { webhookResetter, wrapWhatsAppRoutes } from "@/lib/whatsapp/route";
+import { handleStatuses } from "@/lib/whatsapp/statuses";
+
+// WhatsApp through the Chat SDK adapter, served at /eve/v1/whatsapp. This file
+// only wires things up: who gets a turn, what a tap does and how a reply looks
+// are decided in lib/whatsapp.
+
+// The Chat SDK keeps every inbound message, strangers' included. Keep only what
+// the typing indicator needs (the latest inbound message) and only briefly.
+const HISTORY_MAX_MESSAGES = 10;
+const HISTORY_TTL_MS = 60 * 60 * 1000;
+
+const bridge = chatSdkChannel({
+  userName: "harpy",
+  adapters: { whatsapp: createHarpyWhatsAppAdapter() },
+  state: createChatState(),
+  history: { thread: { maxMessages: HISTORY_MAX_MESSAGES, ttlMs: HISTORY_TTL_MS } },
+  // WhatsApp can't edit sent messages, so each reply is posted once, complete.
+  streaming: false,
+  // The default "drop" loses messages sent while an earlier one is handled.
+  concurrency: "concurrent",
+  turnPolicy: "steer",
+  resolveInputAuth: (event) =>
+    resolveChannelAuth({
+      channel: "whatsapp",
+      externalId: event.user.userId,
+      extraAttributes: { waId: event.user.userId },
+    }),
+  events: {
+    // Replaces eve's default post. Unlike the default, the first line the model
+    // writes before a tool call in a turn is sent too; planWhatsAppReply decides.
+    // eve's default turn.started (typing) is kept.
+    async "message.completed"(eventData, channel) {
+      if (!channel.thread) return;
+      const plan = planWhatsAppReply(eventData, channel.state[TOOL_LINE_TURN_STATE_KEY]);
+      channel.state[TOOL_LINE_TURN_STATE_KEY] = plan.toolLineTurnId;
+      if (!plan.reply) return;
+      const { text, imageUrls } = plan.reply;
+      await channel.thread.post({
+        markdown: text,
+        attachments: imageUrls.map((url) => ({
+          type: "image" as const,
+          url,
+          mimeType: url.endsWith(".png") ? "image/png" : "image/jpeg",
+        })),
+      });
+    },
+  },
+});
+
+bridge.bot.onDirectMessage(async (thread, message) => {
+  try {
+    await runInbound(toInboundMessage(message), {
+      startTurn: async (plan) => {
+        // messageToUserContent reads only text, attachments and threadId.
+        const content =
+          plan.attachments.length === 0
+            ? plan.text
+            : messageToUserContent(
+                Object.assign(Object.create(Object.getPrototypeOf(message)) as Message, message, {
+                  text: plan.text,
+                  attachments: [...plan.attachments],
+                }),
+              );
+        await bridge.send(content, { thread, auth: plan.auth, idempotencyKey: message.id, context: plan.context });
+      },
+      resetSession: async () => (await webhookResetter.getStore()?.(thread.id)) ?? false,
+    });
+  } catch (error) {
+    console.error("whatsapp: inbound failed", { messageId: message.id, error });
+  }
+});
+
+// eve's own handler for its eve_input: buttons stays registered;
+// handleIncomingAction ignores ids that aren't harpy's.
+bridge.bot.onAction(async (event) => {
+  const waId = event.user.userId;
+  try {
+    await handleIncomingAction({
+      actionId: event.actionId,
+      tapId: event.messageId,
+      waId,
+      phone: /^\d+$/.test(waId) ? waId : null,
+    });
+  } catch (error) {
+    console.error("whatsapp: action failed", { actionId: event.actionId, tapId: event.messageId, error });
+  }
+});
+
+const channel: typeof bridge.channel = {
+  ...bridge.channel,
+  routes: wrapWhatsAppRoutes(bridge.channel.routes, {
+    appSecret: () => getWhatsAppConfig()?.appSecret ?? null,
+    onStatuses: handleStatuses,
+  }),
+};
+
+export default channel;

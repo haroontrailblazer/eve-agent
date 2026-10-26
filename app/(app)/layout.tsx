@@ -2,6 +2,7 @@ import { Suspense, type ReactNode } from "react";
 import { AgentChatBootstrapSync } from "@/app/_components/agent-chat-bootstrap-sync";
 import { AppShell } from "@/app/_components/app-shell";
 import { listChatsPageByUser } from "@/lib/db/queries";
+import { isWhatsAppConfigured } from "@/lib/whatsapp/config";
 import { getServerViewer } from "@/lib/session";
 import { getInitialSetupStatus, getSetupStatus } from "@/lib/setup";
 
@@ -36,6 +37,7 @@ async function ResolvedAppBootstrap() {
       setupStatus={setupStatus}
       slackConfigured={Boolean(process.env.SLACK_CONNECTOR)}
       viewer={viewer}
+      whatsappConfigured={isWhatsAppConfigured()}
     />
   );
 }

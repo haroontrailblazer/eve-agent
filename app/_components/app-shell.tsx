@@ -54,6 +54,7 @@ export function AppShell({
   const [viewerState, setViewerState] = useState<Viewer | null>(null);
   const [setupStatusState, setSetupStatusState] = useState(setupStatus);
   const [slackConfigured, setSlackConfigured] = useState(false);
+  const [whatsappConfigured, setWhatsappConfigured] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [enabledConnections, setEnabledConnections] = useState<EnabledConnections>({
     linear: true,
@@ -189,10 +190,12 @@ export function AppShell({
       setupStatus: incomingSetupStatus,
       slackConfigured: incomingSlackConfigured,
       viewer: incomingViewer,
+      whatsappConfigured: incomingWhatsappConfigured,
     }: ChatBootstrapSyncDetail) => {
       setSetupStatusState(incomingSetupStatus);
       setViewerState(incomingViewer);
       setSlackConfigured(incomingSlackConfigured);
+      setWhatsappConfigured(incomingWhatsappConfigured);
       setHistory((items) => (incomingViewer ? mergeChatHistory(chats, items) : []));
       setNextCursor(incomingNextCursor);
       setHistoryLoading(false);
@@ -231,6 +234,7 @@ export function AppShell({
       slackConfigured,
       touchChat,
       viewer: viewerState,
+      whatsappConfigured,
     }),
     [
       activeChatId,
@@ -242,6 +246,7 @@ export function AppShell({
       slackConfigured,
       touchChat,
       viewerState,
+      whatsappConfigured,
     ],
   );
 
@@ -273,6 +278,7 @@ export function AppShell({
           setupStatus={setupStatusState}
           slackConfigured={slackConfigured}
           viewer={viewerState}
+          whatsappConfigured={whatsappConfigured}
         />
         <SidebarInset className="min-w-0 overflow-y-auto">
           <AppHeader actions={authActions} />

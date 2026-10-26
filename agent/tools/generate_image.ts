@@ -2,6 +2,7 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 import type { SourceImage } from "@/lib/image-gen";
 import { resolveBrandContext } from "@/lib/mcp-context";
+import { readAttachmentImage } from "@/lib/media/attachments";
 import { generateBrandImage } from "@/lib/media/generate";
 import { loadSourceImage } from "@/lib/media/load-source-image";
 
@@ -21,6 +22,10 @@ export default defineTool({
       .describe(
         "Optional url of an image to edit/enhance: an attached image's url or a url this tool returned. Other websites are not supported. Omit to generate a brand-new image from the prompt alone.",
       ),
+    sourceAttachmentPath: z
+      .string()
+      .optional()
+      .describe("The path of a photo the owner attached, to edit it."),
   }),
   async execute(input, ctx) {
     const brandContext = await resolveBrandContext(ctx);
@@ -31,6 +36,20 @@ export default defineTool({
 
     const { brandId, userId } = brandContext;
     let sourceImage: SourceImage | undefined;
+
+    if (input.sourceImageUrl && input.sourceAttachmentPath) {
+      return { ok: false, message: "Pass sourceImageUrl or sourceAttachmentPath, not both." };
+    }
+
+    if (input.sourceAttachmentPath) {
+      const photo = await readAttachmentImage(ctx, input.sourceAttachmentPath);
+
+      if (!photo.ok) {
+        return { ok: false, message: photo.message };
+      }
+
+      sourceImage = { bytes: photo.bytes, mediaType: photo.mediaType };
+    }
 
     if (input.sourceImageUrl) {
       const loaded = await loadSourceImage(input.sourceImageUrl);

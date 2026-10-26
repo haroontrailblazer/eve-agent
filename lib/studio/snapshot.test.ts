@@ -14,9 +14,13 @@ const mocks = vi.hoisted(() => ({
   queries: [] as Recorded[],
   results: {} as Record<string, unknown[]>,
   getBrandSettings: vi.fn(),
+  findWhatsAppRecipient: vi.fn(),
+  isWhatsAppConfigured: vi.fn(),
   tableName: undefined as unknown as (t: unknown) => string,
 }));
 
+vi.mock("@/lib/db/channel-identities", () => ({ findWhatsAppRecipient: mocks.findWhatsAppRecipient }));
+vi.mock("@/lib/whatsapp/config", () => ({ isWhatsAppConfigured: mocks.isWhatsAppConfigured }));
 vi.mock("@/lib/db/brands", () => ({ getBrandSettings: mocks.getBrandSettings }));
 vi.mock("@/lib/db/client", () => ({
   db: {
@@ -102,12 +106,14 @@ beforeEach(() => {
   mocks.queries.length = 0;
   mocks.results = {};
   mocks.getBrandSettings.mockReset().mockResolvedValue({ timezone: "Asia/Kolkata", name: "b" });
+  mocks.isWhatsAppConfigured.mockReset().mockReturnValue(true);
+  mocks.findWhatsAppRecipient.mockReset().mockResolvedValue("15551234567");
 });
 
 describe("loadStudioSnapshot", () => {
   it("excludes eval ideas, scopes every query to the brand and orders upNext", async () => {
     mocks.results = { idea: [ideaRow("i1")], "draft+join": [{ draft: draftRow("d9", "x") }] };
-    const snap = await loadStudioSnapshot("brand-1");
+    const snap = await loadStudioSnapshot("brand-1", "user-1");
 
     expect(snap.timezone).toBe("Asia/Kolkata");
     expect(mocks.getBrandSettings).toHaveBeenCalledWith("brand-1");
@@ -140,7 +146,7 @@ describe("loadStudioSnapshot", () => {
       idea: [ideaRow("i1")],
       draft: [draftRow("t", "threads"), draftRow("l", "linkedin"), draftRow("x", "x")],
     };
-    const snap = await loadStudioSnapshot("brand-1");
+    const snap = await loadStudioSnapshot("brand-1", "user-1");
     expect(snap.ideas[0].drafts.map((d) => d.platform)).toEqual(["x", "linkedin", "threads"]);
   });
 
@@ -153,7 +159,7 @@ describe("loadStudioSnapshot", () => {
         { id: "m3", blobUrl: "https://blob/m3.png" },
       ],
     };
-    const snap = await loadStudioSnapshot("brand-1");
+    const snap = await loadStudioSnapshot("brand-1", "user-1");
     expect(mocks.queries.filter((q) => q.table === "media_asset")).toHaveLength(1);
     expect(snap.ideas[0].drafts.map((d) => d.imageUrl)).toEqual([
       "https://blob/m1.png",
@@ -163,8 +169,25 @@ describe("loadStudioSnapshot", () => {
   });
 
   it("skips the media query when nothing has media", async () => {
-    const snap = await loadStudioSnapshot("brand-1");
+    const snap = await loadStudioSnapshot("brand-1", "user-1");
     expect(snap.ideas).toEqual([]);
     expect(mocks.queries.map((q) => q.table)).not.toContain("media_asset");
+  });
+
+  it("marks whatsapp linked when it is configured and the viewer has a number", async () => {
+    const snap = await loadStudioSnapshot("brand-1", "user-1");
+    expect(snap.whatsappLinked).toBe(true);
+    expect(mocks.findWhatsAppRecipient).toHaveBeenCalledWith("brand-1", "user-1");
+  });
+
+  it("is not linked when the viewer has no number", async () => {
+    mocks.findWhatsAppRecipient.mockResolvedValue(null);
+    expect((await loadStudioSnapshot("brand-1", "user-1")).whatsappLinked).toBe(false);
+  });
+
+  it("is not linked, and looks nothing up, when whatsapp is not configured", async () => {
+    mocks.isWhatsAppConfigured.mockReturnValue(false);
+    expect((await loadStudioSnapshot("brand-1", "user-1")).whatsappLinked).toBe(false);
+    expect(mocks.findWhatsAppRecipient).not.toHaveBeenCalled();
   });
 });

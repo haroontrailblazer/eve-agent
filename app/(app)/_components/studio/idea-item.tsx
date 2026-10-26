@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { retryIdeaAction } from "@/app/actions/studio";
+import { toast } from "sonner";
+import { retryIdeaAction, sendIdeaToWhatsAppAction } from "@/app/actions/studio";
 import { IdeaBlock } from "@/components/harpy/idea-block";
 import { showRequestError } from "@/components/harpy/show-request-error";
 import { WorkingIndicator } from "@/components/harpy/working-indicator";
@@ -27,6 +28,7 @@ export function IdeaItem({
   refresh,
   selectedId,
   timezone,
+  whatsappLinked,
 }: {
   readonly idea: StudioIdea;
   readonly timezone: string;
@@ -38,8 +40,10 @@ export function IdeaItem({
   readonly onReview: (draft: StudioDraftRecord, action: DraftReview) => void;
   readonly onEditChange: (draftId: string, editing: boolean) => void;
   readonly refresh: () => Promise<void>;
+  readonly whatsappLinked: boolean;
 }) {
   const [retrying, setRetrying] = useState(false);
+  const [sending, setSending] = useState(false);
   const phase = ideaPhase(idea, now);
 
   async function retry() {
@@ -66,6 +70,27 @@ export function IdeaItem({
     }
   }
 
+  async function sendToWhatsApp() {
+    if (sending) return;
+    setSending(true);
+
+    try {
+      const result = await sendIdeaToWhatsAppAction({ ideaId: idea.id });
+
+      if (result.ok) {
+        toast(result.message);
+      } else {
+        showRequestError(result.message);
+      }
+    } catch {
+      showRequestError(STUDIO_ACTION_FAILED_MESSAGE);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const canSendToWhatsApp = whatsappLinked && idea.drafts.some((draft) => draft.status === "pending_review");
+
   return (
     <IdeaBlock sourceLabel={ideaSourceLabel(idea, now)} text={idea.text}>
       {phase === "drafting" ? <WorkingIndicator label="harpy is drafting" /> : null}
@@ -74,6 +99,13 @@ export function IdeaItem({
           <p className="text-small text-muted-foreground">Some drafts didn&apos;t come back.</p>
           <Button disabled={retrying} onClick={() => void retry()} size="sm" type="button" variant="outline">
             Try again
+          </Button>
+        </div>
+      ) : null}
+      {canSendToWhatsApp ? (
+        <div>
+          <Button disabled={sending} onClick={() => void sendToWhatsApp()} size="sm" type="button" variant="outline">
+            {sending ? "Sending..." : "Send to WhatsApp"}
           </Button>
         </div>
       ) : null}
